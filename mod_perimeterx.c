@@ -1133,11 +1133,6 @@ static const char *set_captcha_enabled(cmd_parms *cmd, void *config, int arg) {
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-
-    if (arg) {
-        conf->block_page_template = CAPTCHA_BLOCKING_PAGE_FMT; // TODO: check for conflict
-    }
-
     conf->captcha_enabled = arg ? true : false;
     return NULL;
 }
