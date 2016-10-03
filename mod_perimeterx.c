@@ -65,7 +65,7 @@ static const char* FILE_EXT_WHITELIST[] = {
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 
-static const int BLOCK_PAGE_BUF_SIZE = 3000;
+static const int BLOCK_PAGE_BUF_SIZE = 8192;
 static const int ITERATIONS_UPPER_BOUND = 10000;
 static const int ITERATIONS_LOWER_BOUND = 0;
 
