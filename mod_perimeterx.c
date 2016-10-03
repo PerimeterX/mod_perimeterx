@@ -127,16 +127,14 @@ static const char *CAPTCHA_BLOCKING_PAGE_FMT  = "<html lang=\"en\">\n \
 
 char *str_replace(const char *str, const char *placeholder, const char *value, apr_pool_t *pool) {
     int str_len = strlen(str);
+    int placeholder_len = strlen(placeholder);
+    int value_len = strlen(value);
     char *res = apr_palloc(pool, sizeof(char) * (str_len - strlen(placeholder) + strlen(value)));
-    const char *ch = strstr(str, placeholder);
-    int len = 0;
-    const char *tmp = str;
-    while (tmp != ch) {
-        tmp ++;
-        len++;
-    }
-    memcpy(res, str, len);
-    memcpy(res + len, value, strlen(value));
+    const char *substr = strstr(str, placeholder);
+    int substr_len = strlen(substr);
+    strncat(res, str, str_len - substr_len);
+    strncat(res, value, value_len);
+    strncat(res, substr + placeholder_len, substr_len - placeholder_len);
     return res;
 }
 
