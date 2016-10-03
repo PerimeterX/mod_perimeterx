@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <arpa/inet.h>
 
 #include <jansson.h>
 
@@ -65,6 +66,7 @@ static const char* FILE_EXT_WHITELIST[] = {
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 
+static const int BLOCK_PAGE_BUF_SIZE = 3000;
 static const int ITERATIONS_UPPER_BOUND = 10000;
 static const int ITERATIONS_LOWER_BOUND = 0;
 
@@ -134,6 +136,7 @@ typedef struct px_config_t {
     const char *cookie_key;
     const char *auth_token;
     const char *base_url;
+    const char *block_page_template;
     char *auth_header;
     bool module_enabled;
     bool captcha_enabled;
@@ -146,6 +149,7 @@ typedef struct px_config_t {
     apr_array_header_t *routes_whitelist;
     apr_array_header_t *useragents_whitelist;
     apr_array_header_t *ip_header_keys;
+    apr_array_header_t *custom_file_ext_whitelist;
 } px_config;
 
 typedef enum {
@@ -758,20 +762,32 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     return captcha_verified;
 }
 
+/*bool is_valid_ip(const char *ip) {*/
+    /*struct sockaddr_in sa;*/
+    /*int res = inet_pton(AF_INET, ip, &(sa));*/
+    /*return res != 0;*/
+    /*[>return (inet_pton(AF_INET, ip, &(sa.sin_addr)) != 0 || inet_pton(AF_INET6, ip, &(sa.sin_addr)) != 0);<]*/
+/*}*/
+
 const char *get_request_ip(const request_rec *r, const px_config *conf) {
+# if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
+    const char *socket_ip = r->useragent_ip;
+# else
+    const char *socket_ip =  r->connection->remote_ip;
+#endif
     const apr_array_header_t *ip_header_keys = conf->ip_header_keys;
     for (int i = 0; i < ip_header_keys->nelts; i++) {
         const char *ip_header_key = APR_ARRAY_IDX(ip_header_keys, i, const char*);
         const char *ip = apr_table_get(r->headers_in, ip_header_key);
+        /*if (is_valid_ip(ip)) {*/
         if (ip) {
             return ip;
+        } else {
+            ERROR(r->server, "Invalid IP address from IPHeader configuration, using socket IP: %s", socket_ip);
+            return socket_ip;
         }
     }
-# if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
-    return r->useragent_ip;
-# else
-    return r->connection->remote_ip;
-#endif
+    return socket_ip;
 }
 
 request_context* create_context(request_rec *r, const px_config *conf) {
@@ -963,10 +979,22 @@ static bool px_should_verify_request(request_rec *r, px_config *conf) {
     }
 
     const char *file_ending = strrchr(r->uri, '.');
-    if (file_ending) {
-        for (int i = 0; i < sizeof(FILE_EXT_WHITELIST)/sizeof(*FILE_EXT_WHITELIST); i++ ) {
-            if (strcmp(file_ending, FILE_EXT_WHITELIST[i]) == 0) {
+    // checking if added custom file extension whitelist
+    if (conf->custom_file_ext_whitelist) {
+        const apr_array_header_t *file_exts = conf->custom_file_ext_whitelist;
+        for (int i = 0; i < file_exts->nelts; i++) {
+            const char *file_ext = APR_ARRAY_IDX(file_exts, i, const char*);
+            if (strncmp(file_ext, r->parsed_uri.path, strlen(file_ext)) == 0) {
                 return false;
+            }
+        }
+    } else {
+        // if not - using default whitelist
+        if (file_ending) {
+            for (int i = 0; i < sizeof(FILE_EXT_WHITELIST)/sizeof(*FILE_EXT_WHITELIST); i++ ) {
+                if (strcmp(file_ending, FILE_EXT_WHITELIST[i]) == 0) {
+                    return false;
+                }
             }
         }
     }
@@ -1095,6 +1123,11 @@ static const char *set_captcha_enabled(cmd_parms *cmd, void *config, int arg) {
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
+
+    if (arg) {
+        conf->block_page_template = CAPTCHA_BLOCKING_PAGE_FMT; // TODO: check for conflict
+    }
+
     conf->captcha_enabled = arg ? true : false;
     return NULL;
 }
@@ -1158,6 +1191,26 @@ static const char *set_base_url(cmd_parms *cmd, void *config, const char *base_u
     return NULL;
 }
 
+static const char *set_block_page_filepath(cmd_parms *cmd, void *config, const char *file_path) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    apr_file_t *file = apr_palloc(cmd->pool, sizeof(apr_file_t*));
+    apr_status_t status = apr_file_open(&file, file_path, APR_FOPEN_READ, APR_FPROT_OS_DEFAULT, cmd->pool);
+    if (status == APR_SUCCESS) {
+        char *buffer = apr_palloc(cmd->pool, BLOCK_PAGE_BUF_SIZE * sizeof(char));
+        apr_size_t bytes_read;
+        apr_file_read_full(file, buffer, 3000, &bytes_read);
+        buffer[bytes_read] = 0;
+        conf->block_page_template = buffer;
+    } else {
+        ERROR(cmd->server, "Could not open blocking page in path: %s, using default blocking page", file_path);
+    }
+
+    return NULL;
+}
+
 static const char *add_route_to_whitelist(cmd_parms *cmd, void *config, const char *route) {
     const char *sep = ";";
     px_config *conf = get_config(cmd, config);
@@ -1179,6 +1232,19 @@ static const char *add_useragent_to_whitelist(cmd_parms *cmd, void *config, cons
     return NULL;
 }
 
+static const char *add_file_extension_whitelist(cmd_parms *cmd, void *config, const char *file_extension) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    if (!conf->custom_file_ext_whitelist) {
+        conf->custom_file_ext_whitelist = apr_array_make(cmd->pool, 0, sizeof(char*));
+    }
+    const char** entry = apr_array_push(conf->custom_file_ext_whitelist);
+    *entry = file_extension;
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -1195,13 +1261,16 @@ static void *create_config(apr_pool_t *p) {
     conf->send_page_activities = false;
     conf->blocking_score = 70;
     conf->captcha_enabled = false;
-    conf->module_version = "Apache Module v1.0.5";
+    conf->module_version = "Apache Module v1.0.6";
     conf->curl_pool_size = 40;
     conf->base_url = DEFAULT_BASE_URL;
     conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
     conf->useragents_whitelist = apr_array_make(p, 0, sizeof(char*));
     conf->curl_pool = curl_pool_create(p, conf->curl_pool_size);
     conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
+    conf->custom_file_ext_whitelist = NULL;
+    conf->block_page_template = BLOCKING_PAGE_FMT;
+
     /*apr_pool_cleanup_register(p, conf->curl_pool, kill_curl_pool, apr_pool_cleanup_null);*/
 
     return conf;
@@ -1263,6 +1332,11 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "PerimeterX server base URL"),
+    AP_INIT_TAKE1("BlockpageLocation",
+            set_block_page_filepath,
+            NULL,
+            OR_ALL,
+            "PerimeterX server base URL"),
     AP_INIT_ITERATE("PXWhitelistRoutes",
             add_route_to_whitelist,
             NULL,
@@ -1270,6 +1344,11 @@ static const command_rec px_directives[] = {
             "Whitelist by paths - this module will not apply on this path list"),
     AP_INIT_ITERATE("PXWhitelistUserAgents",
             add_useragent_to_whitelist,
+            NULL,
+            OR_ALL,
+            "Whitelist by User-Agents - this module will not apply on these user-agents"),
+    AP_INIT_ITERATE("ExtensionWhitelist",
+            add_file_extension_whitelist,
             NULL,
             OR_ALL,
             "Whitelist by User-Agents - this module will not apply on these user-agents"),
