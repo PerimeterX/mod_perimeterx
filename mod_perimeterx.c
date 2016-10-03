@@ -988,18 +988,18 @@ static bool px_should_verify_request(request_rec *r, px_config *conf) {
     }
 
     const char *file_ending = strrchr(r->uri, '.');
-    // checking if added custom file extension whitelist
-    if (conf->custom_file_ext_whitelist) {
-        const apr_array_header_t *file_exts = conf->custom_file_ext_whitelist;
-        for (int i = 0; i < file_exts->nelts; i++) {
-            const char *file_ext = APR_ARRAY_IDX(file_exts, i, const char*);
-            if (strncmp(file_ext, r->parsed_uri.path, strlen(file_ext)) == 0) {
-                return false;
+    if (file_ending) {
+        // checking if added custom file extension whitelist
+        if (conf->custom_file_ext_whitelist) {
+            const apr_array_header_t *file_exts = conf->custom_file_ext_whitelist;
+            for (int i = 0; i < file_exts->nelts; i++) {
+                const char *file_ext = APR_ARRAY_IDX(file_exts, i, const char*);
+                if (strcmp(file_ending, file_ext) == 0) {
+                    return false;
+                }
             }
-        }
-    } else {
-        // if not - using default whitelist
-        if (file_ending) {
+        } else {
+            // if not - using default whitelist
             for (int i = 0; i < sizeof(FILE_EXT_WHITELIST)/sizeof(*FILE_EXT_WHITELIST); i++ ) {
                 if (strcmp(file_ending, FILE_EXT_WHITELIST[i]) == 0) {
                     return false;
