@@ -70,6 +70,17 @@ static const int BLOCK_PAGE_BUF_SIZE = 3000;
 static const int ITERATIONS_UPPER_BOUND = 10000;
 static const int ITERATIONS_LOWER_BOUND = 0;
 
+static const char *CAPTCHA_SCRIPT = "<script> \
+            window.px_vid = '%s';\n \
+            function handleCaptcha(response) { \n \
+            var name = '_pxCaptcha';\n \
+            var expiryUtc = new Date(Date.now() + 1000 * 10).toUTCString();\n \
+            var cookieParts = [name, '=', response + ':' + window.px_vid, '; expires=', expiryUtc, '; path=/'];\n \
+            document.cookie = cookieParts.join('');\n \
+            location.reload();\n \
+            }\n \
+            </script> \n";
+
 static const char *BLOCKING_PAGE_FMT = "<html lang=\"en\">\n\
             <head>\n\
             <link type=\"text/css\" rel=\"stylesheet\" media=\"screen, print\" href=\"//fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800\">\n\
@@ -719,12 +730,19 @@ risk_cookie *decode_cookie(const char *px_cookie, const char *cookie_key, reques
 
 // --------------------------------------------------------------------------------
 
-int rprintf_blocking_page(request_rec *r, const request_context *ctx) {
+int rprintf_blocking_page(request_rec *r, const request_context *ctx, const px_config *conf) {
+    if (conf->block_page_template) {
+        return ap_rputs(conf->block_page_template, r);
+    }
     return ap_rprintf(r, BLOCKING_PAGE_FMT, ctx->full_url, ctx->uuid);
 }
 
-int rprintf_captcha_blocking_page(request_rec *r, const request_context *ctx) {
+int rprintf_captcha_blocking_page(request_rec *r, const request_context *ctx, const px_config *conf) {
     const char *vid = ctx->vid ? ctx->vid : "";
+    if (conf->block_page_template) {
+        const char *fmt_captcha_script = apr_psprintf(r->pool, CAPTCHA_SCRIPT, vid);
+        return ap_rprintf(r, conf->block_page_template, fmt_captcha_script);
+    }
     return ap_rprintf(r, CAPTCHA_BLOCKING_PAGE_FMT, vid, ctx->full_url, ctx->uuid);
 }
 
@@ -762,13 +780,6 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     return captcha_verified;
 }
 
-/*bool is_valid_ip(const char *ip) {*/
-    /*struct sockaddr_in sa;*/
-    /*int res = inet_pton(AF_INET, ip, &(sa));*/
-    /*return res != 0;*/
-    /*[>return (inet_pton(AF_INET, ip, &(sa.sin_addr)) != 0 || inet_pton(AF_INET6, ip, &(sa.sin_addr)) != 0);<]*/
-/*}*/
-
 const char *get_request_ip(const request_rec *r, const px_config *conf) {
 # if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
     const char *socket_ip = r->useragent_ip;
@@ -779,7 +790,6 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
     for (int i = 0; i < ip_header_keys->nelts; i++) {
         const char *ip_header_key = APR_ARRAY_IDX(ip_header_keys, i, const char*);
         const char *ip = apr_table_get(r->headers_in, ip_header_key);
-        /*if (is_valid_ip(ip)) {*/
         if (ip) {
             return ip;
         } else {
@@ -1035,9 +1045,9 @@ int px_handle_request(request_rec *r, px_config *conf) {
 
         if (!request_valid) {
             if (conf->captcha_enabled) {
-                rprintf_captcha_blocking_page(r, ctx);
+                rprintf_captcha_blocking_page(r, ctx, conf);
             } else {
-                rprintf_blocking_page(r, ctx);
+                rprintf_blocking_page(r, ctx, conf);
             }
 # if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 2
             ap_set_content_type(r, "text/html");
@@ -1269,7 +1279,7 @@ static void *create_config(apr_pool_t *p) {
     conf->curl_pool = curl_pool_create(p, conf->curl_pool_size);
     conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
     conf->custom_file_ext_whitelist = NULL;
-    conf->block_page_template = BLOCKING_PAGE_FMT;
+    conf->block_page_template = NULL;
 
     /*apr_pool_cleanup_register(p, conf->curl_pool, kill_curl_pool, apr_pool_cleanup_null);*/
 
