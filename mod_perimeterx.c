@@ -1336,7 +1336,7 @@ static const command_rec px_directives[] = {
             set_block_page_filepath,
             NULL,
             OR_ALL,
-            "PerimeterX server base URL"),
+            "Full path for blocking page location"),
     AP_INIT_ITERATE("PXWhitelistRoutes",
             add_route_to_whitelist,
             NULL,
@@ -1351,7 +1351,7 @@ static const command_rec px_directives[] = {
             add_file_extension_whitelist,
             NULL,
             OR_ALL,
-            "Whitelist by User-Agents - this module will not apply on these user-agents"),
+            "Whitelist by file extensions - this module will not apply on files with one of these file extensions"),
     { NULL }
 };
 
