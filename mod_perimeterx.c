@@ -69,17 +69,6 @@ static const int BLOCK_PAGE_BUF_SIZE = 8192;
 static const int ITERATIONS_UPPER_BOUND = 10000;
 static const int ITERATIONS_LOWER_BOUND = 0;
 
-static const char *CAPTCHA_SCRIPT = "<script> \
-            window.px_vid = '%s';\n \
-            function handleCaptcha(response) { \n \
-            var name = '_pxCaptcha';\n \
-            var expiryUtc = new Date(Date.now() + 1000 * 10).toUTCString();\n \
-            var cookieParts = [name, '=', response + ':' + window.px_vid, '; expires=', expiryUtc, '; path=/'];\n \
-            document.cookie = cookieParts.join('');\n \
-            location.reload();\n \
-            }\n \
-            </script> \n";
-
 static const char *BLOCKING_PAGE_FMT = "<html lang=\"en\">\n\
             <head>\n\
             <link type=\"text/css\" rel=\"stylesheet\" media=\"screen, print\" href=\"//fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800\">\n\
@@ -136,8 +125,23 @@ static const char *CAPTCHA_BLOCKING_PAGE_FMT  = "<html lang=\"en\">\n \
             </body>\n \
             </html>";
 
+char *str_replace(const char *str, const char *placeholder, const char *value, apr_pool_t *pool) {
+    int str_len = strlen(str);
+    char *res = apr_palloc(pool, sizeof(char) * (str_len - strlen(placeholder) + strlen(value)));
+    const char *ch = strstr(str, placeholder);
+    int len = 0;
+    const char *tmp = str;
+    while (tmp != ch) {
+        tmp ++;
+        len++;
+    }
+    memcpy(res, str, len);
+    memcpy(res + len, value, strlen(value));
+    return res;
+}
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
+static const char *ERROR_TEMPLATE_FILE_OPEN = "Could not open blocking page file";
 
 // px configuration
 
@@ -739,8 +743,8 @@ int rprintf_blocking_page(request_rec *r, const request_context *ctx, const px_c
 int rprintf_captcha_blocking_page(request_rec *r, const request_context *ctx, const px_config *conf) {
     const char *vid = ctx->vid ? ctx->vid : "";
     if (conf->block_page_template) {
-        const char *fmt_captcha_script = apr_psprintf(r->pool, CAPTCHA_SCRIPT, vid);
-        return ap_rprintf(r, conf->block_page_template, fmt_captcha_script);
+        const char *fmt_block_page = str_replace(conf->block_page_template, "@VID@", vid, r->pool);
+        return ap_rputs(fmt_block_page, r);
     }
     return ap_rprintf(r, CAPTCHA_BLOCKING_PAGE_FMT, vid, ctx->full_url, ctx->uuid);
 }
@@ -791,9 +795,6 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
         const char *ip = apr_table_get(r->headers_in, ip_header_key);
         if (ip) {
             return ip;
-        } else {
-            ERROR(r->server, "Invalid IP address from IPHeader configuration, using socket IP: %s", socket_ip);
-            return socket_ip;
         }
     }
     return socket_ip;
@@ -1206,15 +1207,16 @@ static const char *set_block_page_filepath(cmd_parms *cmd, void *config, const c
         return ERROR_CONFIG_MISSING;
     }
     apr_file_t *file = apr_palloc(cmd->pool, sizeof(apr_file_t*));
-    apr_status_t status = apr_file_open(&file, file_path, APR_FOPEN_READ, APR_FPROT_OS_DEFAULT, cmd->pool);
-    if (status == APR_SUCCESS) {
+    apr_status_t open_status = apr_file_open(&file, file_path, APR_FOPEN_READ, APR_FPROT_OS_DEFAULT, cmd->pool);
+    if (open_status == APR_SUCCESS) {
         char *buffer = apr_palloc(cmd->pool, BLOCK_PAGE_BUF_SIZE * sizeof(char));
         apr_size_t bytes_read;
-        apr_file_read_full(file, buffer, 3000, &bytes_read);
+        apr_file_read_full(file, buffer, BLOCK_PAGE_BUF_SIZE, &bytes_read);
+        apr_file_close(file);
         buffer[bytes_read] = 0;
         conf->block_page_template = buffer;
     } else {
-        ERROR(cmd->server, "Could not open blocking page in path: %s, using default blocking page", file_path);
+       return ERROR_TEMPLATE_FILE_OPEN;
     }
 
     return NULL;

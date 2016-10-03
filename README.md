@@ -126,13 +126,15 @@ When set to ```On``` the module will be applied on webpage requests.
 **values** : Integer between 0 and 3
 
 ### `IPHeader` ###
-**description** : HTTP header name that contains the real client IP address. Use this feature when your server is behind a CDN.
+**description** : List of HTTP header names that contains the real client IP address. Use this feature when your server is behind a CDN.
 
 **required** : No
 
 **default** : NULL
 
-**values** : string
+**values** : List of strings
+
+**Note**: The order of headers in the configuration matters, the first header found with value will be taken as the IP
 
 ### `CurlPoolSize` ###
 **description** : The number of active curl handles for each server
@@ -150,7 +152,7 @@ When set to ```On``` the module will be applied on webpage requests.
 
 **default** : https://collector.perimeterx.net
 
-**values** : string
+**values** : String
 
 Determines PerimeterX server base URL.
 
@@ -174,8 +176,23 @@ Determines PerimeterX server base URL.
 
 **default** : Empty list
 
-**values** : backspace delimetered list of string
+**values** : whitespace delimetered list of 
 
+### `ExtensionWhitelist`
+
+**description** : Whitespace seperated list of file extensions that will not be examined by PX module.
+
+**required**: No
+
+**default** : .css, .bmp, .tif, .ttf, .docx, .woff2, .js, .pict, .tiff, .eot, .xlsx, .jpg, .csv,
+    .eps, .woff, .xls, .jpeg, .doc, .ejs, .otf, .pptx, .gif, .pdf, .swf, .svg, .ps,
+    .ico, .pls, .midi, .svgz, .class, .png, .ppt, .mid, webp, .jar.
+    
+**Note**: when using this option the default values are cleared and the supplied list will be used instead.
+
+**values** : whitespace delimetered list of strings
+
+**example**: `.txt .css .jpeg`
 
 ### Example ###
 
@@ -211,9 +228,5 @@ Determines PerimeterX server base URL.
                 ReportPageRequest On
                 Captcha On
         </IfModule>
-
-        ErrorLog ${APACHE_LOG_DIR}/error.log
-        CustomLog ${APACHE_LOG_DIR}/access.log combined
-
 </VirtualHost>
 ```
