@@ -106,6 +106,67 @@ When set to ```On``` the module will be applied on webpage requests.
 
 **values** : On | Off
 
+### `BlockpageLocation`
+
+Apache module allows you to customize your blocking page.
+
+Under this configuration you need to specify the full path to an blocking page html template file.
+
+When captcha is enabled, the template **must** include:
+
+* Inside `<head>` section:
+
+```html
+<script src="https://www.google.com/recaptcha/api.js"></script>
+<script>
+function handleCaptcha(response) {
+    var name = '_pxCaptcha';
+    var expiryUtc = new Date(Date.now() + 1000 * 10).toUTCString();
+    var cookieParts = [name, '=', response + ':@VID@', '; expires=', expiryUtc, '; path=/'];
+    document.cookie = cookieParts.join('');
+    location.reload();
+}
+</script>
+```
+* Inside `<body>` section:
+
+```
+<div class="g-recaptcha" data-sitekey="6Lcj-R8TAAAAABs3FrRPuQhLMbp5QrHsHufzLf7b" data-callback="handleCaptcha" data-theme="dark"></div>
+```
+#### configuration example:
+ 
+```xml
+<IfModule mod_perimeterx.c>
+	...
+	BlockpageLocation /var/www/blockpage.tmpl.html
+	...
+</IfModule>
+```
+
+#### Block page implementation example: 
+
+```html
+<html>
+    <head>
+        <script src="https://www.google.com/recaptcha/api.js"></script>
+        <script>
+        function handleCaptcha(response) {
+            var name = '_pxCaptcha';
+            var expiryUtc = new Date(Date.now() + 1000 * 10).toUTCString();
+            var cookieParts = [name, '=', response + ':@VID@', '; expires=', expiryUtc, '; path=/'];
+            document.cookie = cookieParts.join('');
+            location.reload();
+        }
+        </script>
+    </head>
+    <body>
+        <h1>You are Blocked</h1>
+        <p>Try and solve the captcha</p> 
+        <div class="g-recaptcha" data-sitekey="6Lcj-R8TAAAAABs3FrRPuQhLMbp5QrHsHufzLf7b" data-callback="handleCaptcha" data-theme="dark"></div>
+    </body>
+<html>
+```
+
 ### `ReportPageRequest` ###
 
 **description** : Enables the ablity to report page requests and blocking activities to PerimeterX
@@ -126,13 +187,15 @@ When set to ```On``` the module will be applied on webpage requests.
 **values** : Integer between 0 and 3
 
 ### `IPHeader` ###
-**description** : HTTP header name that contains the real client IP address. Use this feature when your server is behind a CDN.
+**description** : List of HTTP header names that contains the real client IP address. Use this feature when your server is behind a CDN.
 
 **required** : No
 
 **default** : NULL
 
-**values** : string
+**values** : List of strings
+
+**Note**: The order of headers in the configuration matters, the first header found with value will be taken as the IP
 
 ### `CurlPoolSize` ###
 **description** : The number of active curl handles for each server
@@ -150,7 +213,7 @@ When set to ```On``` the module will be applied on webpage requests.
 
 **default** : https://collector.perimeterx.net
 
-**values** : string
+**values** : String
 
 Determines PerimeterX server base URL.
 
@@ -174,8 +237,23 @@ Determines PerimeterX server base URL.
 
 **default** : Empty list
 
-**values** : backspace delimetered list of string
+**values** : whitespace delimetered list of 
 
+### `ExtensionWhitelist`
+
+**description** : Whitespace seperated list of file extensions that will not be examined by PX module.
+
+**required**: No
+
+**default** : .css, .bmp, .tif, .ttf, .docx, .woff2, .js, .pict, .tiff, .eot, .xlsx, .jpg, .csv,
+    .eps, .woff, .xls, .jpeg, .doc, .ejs, .otf, .pptx, .gif, .pdf, .swf, .svg, .ps,
+    .ico, .pls, .midi, .svgz, .class, .png, .ppt, .mid, webp, .jar.
+    
+**Note**: when using this option the default values are cleared and the supplied list will be used instead.
+
+**values** : whitespace delimetered list of strings
+
+**example**: `.txt .css .jpeg`
 
 ### Example ###
 
@@ -211,9 +289,5 @@ Determines PerimeterX server base URL.
                 ReportPageRequest On
                 Captcha On
         </IfModule>
-
-        ErrorLog ${APACHE_LOG_DIR}/error.log
-        CustomLog ${APACHE_LOG_DIR}/access.log combined
-
 </VirtualHost>
 ```

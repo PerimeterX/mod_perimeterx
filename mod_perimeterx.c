@@ -65,6 +65,7 @@ static const char* FILE_EXT_WHITELIST[] = {
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 
+static const int BLOCK_PAGE_BUF_SIZE = 8192;
 static const int ITERATIONS_UPPER_BOUND = 10000;
 static const int ITERATIONS_LOWER_BOUND = 0;
 
@@ -124,8 +125,21 @@ static const char *CAPTCHA_BLOCKING_PAGE_FMT  = "<html lang=\"en\">\n \
             </body>\n \
             </html>";
 
+char *str_replace(const char *str, const char *placeholder, const char *value, apr_pool_t *pool) {
+    int str_len = strlen(str);
+    int placeholder_len = strlen(placeholder);
+    int value_len = strlen(value);
+    char *res = apr_palloc(pool, sizeof(char) * (str_len - strlen(placeholder) + strlen(value)));
+    const char *substr = strstr(str, placeholder);
+    int substr_len = strlen(substr);
+    strncat(res, str, str_len - substr_len);
+    strncat(res, value, value_len);
+    strncat(res, substr + placeholder_len, substr_len - placeholder_len);
+    return res;
+}
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
+static const char *ERROR_TEMPLATE_FILE_OPEN = "Could not open blocking page file";
 
 // px configuration
 
@@ -134,6 +148,7 @@ typedef struct px_config_t {
     const char *cookie_key;
     const char *auth_token;
     const char *base_url;
+    const char *block_page_template;
     char *auth_header;
     bool module_enabled;
     bool captcha_enabled;
@@ -716,12 +731,19 @@ risk_cookie *decode_cookie(const char *px_cookie, const char *cookie_key, reques
 
 // --------------------------------------------------------------------------------
 
-int rprintf_blocking_page(request_rec *r, const request_context *ctx) {
+int rprintf_blocking_page(request_rec *r, const request_context *ctx, const px_config *conf) {
+    if (conf->block_page_template) {
+        return ap_rputs(conf->block_page_template, r);
+    }
     return ap_rprintf(r, BLOCKING_PAGE_FMT, ctx->full_url, ctx->uuid);
 }
 
-int rprintf_captcha_blocking_page(request_rec *r, const request_context *ctx) {
+int rprintf_captcha_blocking_page(request_rec *r, const request_context *ctx, const px_config *conf) {
     const char *vid = ctx->vid ? ctx->vid : "";
+    if (conf->block_page_template) {
+        const char *fmt_block_page = str_replace(conf->block_page_template, "@VID@", vid, r->pool);
+        return ap_rputs(fmt_block_page, r);
+    }
     return ap_rprintf(r, CAPTCHA_BLOCKING_PAGE_FMT, vid, ctx->full_url, ctx->uuid);
 }
 
@@ -760,6 +782,11 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 }
 
 const char *get_request_ip(const request_rec *r, const px_config *conf) {
+# if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
+    const char *socket_ip = r->useragent_ip;
+# else
+    const char *socket_ip =  r->connection->remote_ip;
+#endif
     const apr_array_header_t *ip_header_keys = conf->ip_header_keys;
     for (int i = 0; i < ip_header_keys->nelts; i++) {
         const char *ip_header_key = APR_ARRAY_IDX(ip_header_keys, i, const char*);
@@ -768,11 +795,7 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
             return ip;
         }
     }
-# if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
-    return r->useragent_ip;
-# else
-    return r->connection->remote_ip;
-#endif
+    return socket_ip;
 }
 
 request_context* create_context(request_rec *r, const px_config *conf) {
@@ -1020,9 +1043,9 @@ int px_handle_request(request_rec *r, px_config *conf) {
 
         if (!request_valid) {
             if (conf->captcha_enabled) {
-                rprintf_captcha_blocking_page(r, ctx);
+                rprintf_captcha_blocking_page(r, ctx, conf);
             } else {
-                rprintf_blocking_page(r, ctx);
+                rprintf_blocking_page(r, ctx, conf);
             }
 # if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 2
             ap_set_content_type(r, "text/html");
@@ -1171,6 +1194,27 @@ static const char *set_base_url(cmd_parms *cmd, void *config, const char *base_u
     return NULL;
 }
 
+static const char *set_block_page_filepath(cmd_parms *cmd, void *config, const char *file_path) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    apr_file_t *file;
+    apr_status_t open_status = apr_file_open(&file, file_path, APR_FOPEN_READ, APR_FPROT_OS_DEFAULT, cmd->pool);
+    if (open_status == APR_SUCCESS) {
+        char *buffer = apr_palloc(cmd->pool, BLOCK_PAGE_BUF_SIZE * sizeof(char));
+        apr_size_t bytes_read;
+        apr_file_read_full(file, buffer, BLOCK_PAGE_BUF_SIZE, &bytes_read);
+        apr_file_close(file);
+        buffer[bytes_read] = 0;
+        conf->block_page_template = buffer;
+    } else {
+       return ERROR_TEMPLATE_FILE_OPEN;
+    }
+
+    return NULL;
+}
+
 static const char *add_route_to_whitelist(cmd_parms *cmd, void *config, const char *route) {
     const char *sep = ";";
     px_config *conf = get_config(cmd, config);
@@ -1221,7 +1265,7 @@ static void *create_config(apr_pool_t *p) {
     conf->send_page_activities = false;
     conf->blocking_score = 70;
     conf->captcha_enabled = false;
-    conf->module_version = "Apache Module v1.0.5";
+    conf->module_version = "Apache Module v1.0.6";
     conf->curl_pool_size = 40;
     conf->base_url = DEFAULT_BASE_URL;
     conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
@@ -1229,6 +1273,7 @@ static void *create_config(apr_pool_t *p) {
     conf->custom_file_ext_whitelist = NULL;
     conf->curl_pool = curl_pool_create(p, conf->curl_pool_size);
     conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
+    conf->block_page_template = NULL;
 
     /*apr_pool_cleanup_register(p, conf->curl_pool, kill_curl_pool, apr_pool_cleanup_null);*/
 
@@ -1291,6 +1336,11 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "PerimeterX server base URL"),
+    AP_INIT_TAKE1("BlockpageLocation",
+            set_block_page_filepath,
+            NULL,
+            OR_ALL,
+            "Full path for blocking page location"),
     AP_INIT_ITERATE("PXWhitelistRoutes",
             add_route_to_whitelist,
             NULL,
