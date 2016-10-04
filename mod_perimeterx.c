@@ -1199,7 +1199,7 @@ static const char *set_block_page_filepath(cmd_parms *cmd, void *config, const c
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    apr_file_t *file = apr_palloc(cmd->pool, sizeof(apr_file_t*));
+    apr_file_t *file;
     apr_status_t open_status = apr_file_open(&file, file_path, APR_FOPEN_READ, APR_FPROT_OS_DEFAULT, cmd->pool);
     if (open_status == APR_SUCCESS) {
         char *buffer = apr_palloc(cmd->pool, BLOCK_PAGE_BUF_SIZE * sizeof(char));
