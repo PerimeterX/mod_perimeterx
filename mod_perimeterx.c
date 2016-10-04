@@ -162,7 +162,6 @@ typedef struct px_config_t {
     apr_array_header_t *useragents_whitelist;
     apr_array_header_t *custom_file_ext_whitelist;
     apr_array_header_t *ip_header_keys;
-    apr_array_header_t *custom_file_ext_whitelist;
 } px_config;
 
 typedef enum {
@@ -1274,7 +1273,6 @@ static void *create_config(apr_pool_t *p) {
     conf->custom_file_ext_whitelist = NULL;
     conf->curl_pool = curl_pool_create(p, conf->curl_pool_size);
     conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
-    conf->custom_file_ext_whitelist = NULL;
     conf->block_page_template = NULL;
 
     /*apr_pool_cleanup_register(p, conf->curl_pool, kill_curl_pool, apr_pool_cleanup_null);*/
