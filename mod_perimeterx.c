@@ -160,6 +160,7 @@ typedef struct px_config_t {
     int curl_pool_size;
     apr_array_header_t *routes_whitelist;
     apr_array_header_t *useragents_whitelist;
+    apr_array_header_t *custom_file_ext_whitelist;
     apr_array_header_t *ip_header_keys;
     apr_array_header_t *custom_file_ext_whitelist;
 } px_config;
@@ -988,8 +989,8 @@ static bool px_should_verify_request(request_rec *r, px_config *conf) {
 
     const char *file_ending = strrchr(r->uri, '.');
     if (file_ending) {
-        // checking if added custom file extension whitelist
         if (conf->custom_file_ext_whitelist) {
+            // using custom file extension whitelist
             const apr_array_header_t *file_exts = conf->custom_file_ext_whitelist;
             for (int i = 0; i < file_exts->nelts; i++) {
                 const char *file_ext = APR_ARRAY_IDX(file_exts, i, const char*);
@@ -998,7 +999,7 @@ static bool px_should_verify_request(request_rec *r, px_config *conf) {
                 }
             }
         } else {
-            // if not - using default whitelist
+            // using default whitelist
             for (int i = 0; i < sizeof(FILE_EXT_WHITELIST)/sizeof(*FILE_EXT_WHITELIST); i++ ) {
                 if (strcmp(file_ending, FILE_EXT_WHITELIST[i]) == 0) {
                     return false;
@@ -1270,6 +1271,7 @@ static void *create_config(apr_pool_t *p) {
     conf->base_url = DEFAULT_BASE_URL;
     conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
     conf->useragents_whitelist = apr_array_make(p, 0, sizeof(char*));
+    conf->custom_file_ext_whitelist = NULL;
     conf->curl_pool = curl_pool_create(p, conf->curl_pool_size);
     conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
     conf->custom_file_ext_whitelist = NULL;
