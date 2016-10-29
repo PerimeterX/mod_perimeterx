@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <arpa/inet.h>
+#include <inttypes.h>
 
 #include <jansson.h>
 
@@ -125,6 +126,7 @@ static const char *CAPTCHA_BLOCKING_PAGE_FMT  = "<html lang=\"en\">\n \
 
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
+static const char *ERROR_BAD_IPRANGE_CONF = "mod_perimeterx:  IPRangeWhitelist must be in the form of hostaddres/netmask, for example - 192.168.0.0/24";
 
 // px configuration
 
@@ -151,6 +153,7 @@ typedef struct px_config_t {
     apr_array_header_t *custom_file_ext_whitelist;
     apr_array_header_t *ip_header_keys;
     apr_array_header_t *sensitive_routes;
+    apr_array_header_t *ip_filters;
 } px_config;
 
 typedef enum {
@@ -248,6 +251,12 @@ typedef struct request_context_t {
     request_rec *r;
 } request_context;
 
+// ip_filter_t stores the configuration for IPRangeWhitelist
+//
+typedef struct ip_filter_t {
+    struct in_addr *net;
+    uint8_t bits;
+} ip_filter;
 
 // response_t helper buffer for response data
 //
@@ -256,6 +265,16 @@ struct response_t {
     size_t size;
     server_rec *server;
 };
+
+
+// checks if ipv4 is in net range
+//
+static bool cidr_match(const struct in_addr *addr, const struct in_addr *net, uint8_t bits) {
+  if (bits == 0) {
+    return true;
+  }
+  return !((addr->s_addr ^ net->s_addr) & htonl(0xFFFFFFFFu << (32 - bits)));
+}
 
 // post request response callback
 //
@@ -859,7 +878,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     }
 #endif
 
-    ctx->ip = get_request_ip(r, conf);
+    ctx->ip = apr_table_get(r->subprocess_env, "real_ip");
     if (!ctx->ip) {
         ERROR(r->server, "Request IP is NULL");
     }
@@ -1030,6 +1049,14 @@ handle_response:
     return request_valid;
 }
 
+static bool is_cidr_match(const char *ip, const ip_filter *ipf, apr_pool_t *pool, server_rec *s) {
+    struct in_addr *ip_addr = apr_palloc(pool, sizeof(struct in_addr));
+    if (inet_pton(AF_INET, ip, ip_addr) == 1) { // valid ip v4 address
+        return cidr_match(ip_addr, ipf->net, ipf->bits);
+    }
+    return false;
+}
+
 static bool px_should_verify_request(request_rec *r, px_config *conf) {
     if (!conf->module_enabled) {
         return false;
@@ -1060,6 +1087,18 @@ static bool px_should_verify_request(request_rec *r, px_config *conf) {
         }
     }
 
+    // checks if request ip is filtered using IPRangeWhitelist
+    const apr_array_header_t *ip_filters = conf->ip_filters;
+    for (int i = 0; i < ip_filters->nelts; i++) {
+        const ip_filter *ipf = APR_ARRAY_IDX(ip_filters, i, const ip_filter*);
+        const char *extracted_ip = apr_table_get(r->subprocess_env, "real_ip");
+        if (is_cidr_match(extracted_ip, ipf, r->pool, r->server)) {
+            const char *netstr = inet_ntoa(*ipf->net);
+            INFO(r->server, "request is whitelisted due to ip: >>%s<< in range of: >> %s/%"PRIu8" <<", extracted_ip, netstr, ipf->bits);
+            return false;
+        }
+    }
+
     // checks if request is filtered using PXWhitelistRoutes
     const apr_array_header_t *routes = conf->routes_whitelist;
     for (int i = 0; i < routes->nelts; i++) {
@@ -1085,6 +1124,8 @@ static bool px_should_verify_request(request_rec *r, px_config *conf) {
 }
 
 int px_handle_request(request_rec *r, px_config *conf) {
+    const char *request_ip = get_request_ip(r, conf);
+    apr_table_add(r->subprocess_env, "real_ip", request_ip);
     if (!px_should_verify_request(r, conf)) {
         return OK;
     }
@@ -1320,6 +1361,31 @@ static const char *add_sensitive_route(cmd_parms *cmd, void *config, const char 
     return NULL;
 }
 
+static const char *add_ip_range_to_whitelist(cmd_parms *cmd, void *config, const char *ip) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    ip_filter *ipf = apr_palloc(cmd->pool, sizeof(ip_filter));
+    char *ipcpy = apr_palloc(cmd->pool, sizeof(char) * strlen(ip) + 1);
+    apr_cpystrn(ipcpy, ip, strlen(ip) + 1);
+    char *last = apr_palloc(cmd->pool, sizeof(char) * strlen(ip) + 1);
+    const char *netstr = apr_strtok(ipcpy, "/", &last);
+    // there is no / in the configuration
+    if (strlen(netstr) == strlen(ip)) {
+        return ERROR_BAD_IPRANGE_CONF;
+    }
+    const char *bitsstr = apr_strtok(NULL, "", &last);
+    ipf->net = apr_palloc(cmd->pool, sizeof(struct in_addr));
+    int status = inet_aton(netstr, ipf->net);
+    ipf->bits = atoi(bitsstr);
+    const void **entry = apr_array_push(conf->ip_filters);
+    *entry = ipf;
+
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -1350,6 +1416,7 @@ static void *create_config(apr_pool_t *p) {
         conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
         conf->block_page_url = NULL;
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
+        conf->ip_filters = apr_array_make(p, 0, sizeof(ip_filter*));
     }
     return conf;
 }
@@ -1435,6 +1502,11 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Sensitive routes - for each of this uris the module will do a server-to-server call even if a good cookie is on the request"),
+    AP_INIT_ITERATE("IPRangeWhitelist",
+            add_ip_range_to_whitelist,
+            NULL,
+            OR_ALL,
+            "IPRangeWhitelist - whitelist ranges of IPs using host address and net mask"),
     { NULL }
 };
 

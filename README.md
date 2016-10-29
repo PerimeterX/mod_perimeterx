@@ -332,6 +332,21 @@ Determines PerimeterX server base URL.
 
 **example**: `.txt .css .jpeg`
 
+### `IPRangeWhitelist`
+
+**description** : Whitespace seperated list of `hostaddress/netmask` strings.
+
+**required**: No
+
+**default** : Empty list
+    
+**Note**: when using this option the default values are cleared and the supplied list will be used instead.
+
+**values** : whitespace delimetered list of strings
+
+**example**: `192.168.0.0/24`
+
+
 ### Example ###
 
 * Configuration for apache server
@@ -348,6 +363,7 @@ Determines PerimeterX server base URL.
     CurlPoolSize 40
     PXWhitelistRoutes /server-status /staging
     PXWhitelistUserAgents "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/534.34 (KHTML,  like Gecko) PhantomJS/1.9.0 (development) Safari/534.34"
+    IPRangeWhitelist 192.168.0.0/16
 </IfModule>
 ```
 
