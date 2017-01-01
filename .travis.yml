@@ -4,4 +4,4 @@ services:
   - docker
 
 install:
-  - docker build -t perimeterx/mod_perimeterx
+  - docker build -t perimeterx/mod_perimeterx .
