@@ -3,5 +3,5 @@ sudo: required
 services:
   - docker
 
-install:
+script:
   - docker build -t perimeterx/mod_perimeterx .
