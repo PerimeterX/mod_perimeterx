@@ -1405,7 +1405,7 @@ static void *create_config(apr_pool_t *p) {
         conf->send_page_activities = false;
         conf->blocking_score = 70;
         conf->captcha_enabled = false;
-        conf->module_version = "Apache Module v1.0.10-RC";
+        conf->module_version = "Apache Module v1.0.10";
         conf->curl_pool_size = 40;
         conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->useragents_whitelist = apr_array_make(p, 0, sizeof(char*));
