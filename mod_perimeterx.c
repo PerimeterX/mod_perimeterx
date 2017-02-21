@@ -78,7 +78,7 @@ static const char *BLOCKING_PAGE_FMT = "<html lang=\"en\">\n\
             <style> p { width: 60%%; margin: 0 auto; font-size: 35px; } body { background-color: #a2a2a2; font-family: \"Open Sans\"; margin: 5%%; } img { width: 180px; } a { color: #2020B1; text-decoration: blink; } a:hover { color: #2b60c6; } </style>\n\
             </head>\n\
             <body cz-shortcut-listen=\"true\">\n\
-            <div><img src=\"http://storage.googleapis.com/instapage-thumbnails/035ca0ab/e94de863/1460594818-1523851-467x110-perimeterx.png\"> </div>\n \
+            <div><img src=\"https://s.perimeterx.net/logo.png\"> </div>\n \
             <span style=\"color: white; font-size: 34px;\">Access to This Page Has Been Blocked</span> \n\
             <div style=\"font-size: 24px;color: #000042;\">\n\
             <br> Access to this page is blocked according to the site security policy.<br> Your browsing behaviour fingerprinting made us think you may be a bot. <br> <br> This may happen as a result of the following: \n\
@@ -112,7 +112,7 @@ static const char *CAPTCHA_BLOCKING_PAGE_FMT  = "<html lang=\"en\">\n \
                                                  </script> \n \
                                                  </head>\n \
                                                  <body cz-shortcut-listen=\"true\">\n \
-                                                 <div><img src=\"http://storage.googleapis.com/instapage-thumbnails/035ca0ab/e94de863/1460594818-1523851-467x110-perimeterx.png\"> </div>\n \
+                                                 <div><img src=\"https://s.perimeterx.net/logo.png\"> </div>\n \
                                                  <span style=\"color: white; font-size: 34px;\">Access to This Page Has Been Blocked</span> \n \
                                                  <div style=\"font-size: 24px;color: #000042;\">\n \
                                                  <br> Access to this page is blocked according to the site security policy.<br> Your browsing behaviour fingerprinting made us think you may be a bot. <br> <br> This may happen as a result of the following: \n \
@@ -1574,4 +1574,3 @@ module AP_MODULE_DECLARE_DATA perimeterx_module =  {
     px_directives,              /* command apr_table_t */
     perimeterx_register_hooks   /* register hooks */
 };
-
