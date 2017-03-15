@@ -1,7 +1,24 @@
 sudo: required
 
-services:
-  - docker
+language: perl
+perl:
+  - '5.18'
+
+before_install:
+  - sudo apt-get install -y pkg-config libjansson-dev libcurl4-openssl-dev libssl-dev apache2 apache2-dev
+
+install:
+  - cd src/ && sudo make debug
+  - cd ../Apache-ModPerimeterXTestUtils/ && perl Makefile.pl && make && sudo make install
+  - cpanm --installdeps --notest .
 
 script:
-  - docker build -t perimeterx/mod_perimeterx .
+  - cd../ && perl Makefile.PL && make && make install
+  - ./t/TEST -v
+
+after_failur:
+  - apache2ctl -M
+  - cat /t/logs/error_log
+
+notifications:
+  on_failure: always

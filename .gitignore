@@ -6,3 +6,6 @@ unknown
 .libs
 **/*.o
 perimeterx.conf.values
+t/TEST
+Makefile
+.vagrant

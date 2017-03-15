@@ -25,6 +25,8 @@ Table of Contents
 - [libcurl >= 7.19.0] (https://curl.haxx.se/docs/install.html) 
 - [jansson 2.6](http://www.digip.org/jansson/)
 - [Apache Portable Runtime (APR) >=1.4.6](https://apr.apache.org/)
+- [pkg-config](https://en.wikipedia.org/wiki/Pkg-config)
+- [json-c] (https://github.com/json-c/json-c/wiki)
 
 You can install dependencies using the Linux package manager (```yum``` / ```debian``` packages) or install them manually.
 
@@ -32,7 +34,9 @@ You can install dependencies using the Linux package manager (```yum``` / ```deb
 ```shell
 $ sudo apt-get install libjansson-dev
 $ sudo apt-get install libcurl4-openssl-dev
+$ sudo apt-get install libssl-dev
 $ sudo apt-get install apache2-dev 
+$ sudo apt-get install pkg-config
 ```
 
 <a name="installation"></a>Installation

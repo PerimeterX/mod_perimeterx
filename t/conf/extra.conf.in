@@ -1,0 +1,39 @@
+# where to find mod_perimeterx and configuration
+#ServerRoot "/etc/apache2"
+#ServerName "test-server"
+
+#Include mods-available/authz_host.load
+#Include mods-available/mpm_event.load
+#Include mods-available/mpm_event.conf
+#Include mods-available/authz_core.load
+
+LoadModule mpm_event_module /usr/lib/apache2/modules/mod_mpm_event.so
+<IfModule mpm_event_module>
+	StartServers			 2
+	MinSpareThreads		 25
+	MaxSpareThreads		 75
+	ThreadLimit			 64
+	ThreadsPerChild		 25
+	MaxRequestWorkers	  150
+	MaxConnectionsPerChild   0
+</IfModule>
+
+LoadModule authz_core_module /usr/lib/apache2/modules/mod_authz_core.so
+LoadModule perl_module       /usr/lib/apache2/modules/mod_perl.so
+LoadModule authz_user_module /usr/lib/apache2/modules/mod_authz_user.so
+LoadModule authz_host_module /usr/lib/apache2/modules/mod_authz_host.so
+LoadModule perimeterx_module /usr/lib/apache2/modules/mod_perimeterx.so
+
+<IfModule mod_perimeterx.c>
+    PXEnabled on
+    AuthToken TOKEN
+    CookieKey perimeterx
+    AppId APP_ID
+    BlockingScore 30
+    Captcha Off
+    IPHeader MyRealIP1 MyRealRealIP
+    SensitiveRoutes /sensitive_route
+    PXWhitelistRoutes /server-status
+    PXWhitelistUserAgents whitelisted-useragent
+    BlockPageURL /block.html
+</IfModule>
