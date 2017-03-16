@@ -1,24 +1,13 @@
 sudo: required
 
-language: perl
-perl:
-  - '5.18'
+services:
+  - docker
 
 before_install:
-  - sudo apt-get install -y pkg-config libjansson-dev libcurl4-openssl-dev libssl-dev apache2 apache2-dev
+  - docker build -t mod_perimeterx-test -t Dockerfile-test .
+  - docker run mod_perimeterx-test
 
-install:
-  - cd src/ && sudo make debug
-  - cd ../Apache-ModPerimeterXTestUtils/ && perl Makefile.pl && make && sudo make install
-  - cpanm --installdeps --notest .
-
-script:
-  - cd../ && perl Makefile.PL && make && make install
-  - ./t/TEST -v
-
-after_failur:
-  - apache2ctl -M
-  - cat /t/logs/error_log
-
-notifications:
-  on_failure: always
+env:
+  global:
+  - secure: gJB8464GqifE+p6oZ9EwYrpR1dCZnjEYbfZ78K4X+48hQr5glKt3WAVInZX/uxWTGiKSkS49te83bAFj943axYMSJL/JhwUhlPQgA94mEJyT2ckRjepwjXO6Pj1hLnClvB9+0TOGoGAsL2DskJbNCrZcThS70/u2MPt804dy/7hpDIvPdPozBgq0fm8/bhoBSyV8VQwWbs5fsCDAwcnswj9DglZIzD5p8DRT29FeGe5w7V8Lm4WcuOHXClPBhdIYb6n5XqUGBiqQm/OMKG7ta5YTo1zmV5Y8vuWzJaf6QiKaQm583NBU+O3lJcB14Qi8wnhVykFr/TgiEGDQpTkqMOLNC0AQ+0QYybWpzAUleR8QZQJqbSzqKMZ44tTU1anuxm6ixknX/06x6S2wdCV8H71pe3A3MUvSmP6K8x5pViF8yBsQS5f2aaMNh+PujW4vqq1pwp0n4h2eBwNCKQFjcPvwZMDkeOEk2rasqfiUUCUS768Nbf1/LU2bn6ZJxAMo+L2KyhQv+XMZXmH2GvBHAtvjK/BNQkR7qci6751BXuY99MgHR+W4QNqHCfLUGTBQfNK4eMIa7oXcUDwnrdzkrH97+azKnD0cWmuqck1BO8fcgVWcGpWlWCKouNaUnR+CtHbrPBpXLg/JndEE7pTd2S4Q7NkbHAy6dmi7pV2ckus=
+  - secure: GWwQcEDHtZ2PQ7RSFA21Zptm+82yJBPFqvY9yluU0cjHlSdOU0AwSpxeFU4/itGPipGjhos9iyxEOkgZfpPe14lrjr9S4VnE3xJF0m+B5cg6EZhQRnHXFV6hdpJgn346cdQiF+bhoeCmJNcQVhFpwkiL/iE5d+YOgsetBqR44UgUn5axadRAtTYji2LJUhe9phHcGgQ+0szlOOAgMaxSiI4D8wYP+Bj4plZvyYrHb8fALiq8Za0gsonOscPoK6nRmKvwlW7WqMkiNR0DE2KT7VzTRHS2snPkv6Lhz7Z9Xzw6pslDpsSSxbU1BIYRKK25VNDBlw+tE5H6SOADrV3Dm+GWy6GUXlucC2kMlC3Bfp2mKhrXB0YIdPngcQFukyTLPGozaRJWLFEdpzNMbQtarjr55Idp5HEXdGlS5LqV4B0liX6Gxl1dduziF/B8sbABxxy1cCwA78ozfAtEAqW/jDq0m/kDuLdI7FxJdJsyjNIJYsiJM5vYEhTCDKTNzQhBTf/u/xnOdUPpGACBjQofqzvIARn5whFcYFD0+jEEwYkRPfryH27haHcE2iBW4cnpWQEjyRT0iUoTdl/0os/dkfwdRxGx8AgJpVC4y9BmtIlQorhg0FEgLU14Ys5Bw1IZIftgLX5eyQrcXod6XCS3mpzbrpiaKuyhWyTKPG4gx1U=
