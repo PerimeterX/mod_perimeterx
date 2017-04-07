@@ -346,13 +346,13 @@ SetEnvIf Referer www\.mydomain\.example\.com PX_SKIP_MODULE true
 * This will skip all `HEAD` requests:
 
 ```
-SetEnvIfNoCase Request_Method HEAD PX_SKIP_MODULE true
+SetEnvIf Request_Method HEAD PX_SKIP_MODULE true
 ```
 
 * If you are using an internal test client of some sort you can skip px module by it's user agnet:
 
 ```
-SetEnvIfNoCase User-Agent good-bot PX_SKIP_MODULE true
+SetEnvIf User-Agent good-bot PX_SKIP_MODULE true
 ```
 
 > **Read more on `mod_setenvif` [here](https://httpd.apache.org/docs/current/mod/mod_setenvif.html).**
