@@ -315,8 +315,8 @@ function getQueryString(name, url) {
 
 Determines PerimeterX server base URL.
 
-### <a name="baseurl"></a> `SkipModByEnvvar` ###
-**description** : Allow to skip PerimeterX module if environment variable `PX_SKIP_MODULE` is set on the request.
+### <a name="baseurl"></a> `DisableModByEnvvar` ###
+**description** : Disables the PerimeterX module if environment variable `PX_SKIP_MODULE` is set on the request.
 
 **required** : No
 
@@ -324,39 +324,38 @@ Determines PerimeterX server base URL.
 
 **values** : On|Off
 
-##### Example Use-cases
+##### Examples
 
-If you are using `mod_setenvif`, or something similiar, you can configure set of rules for flagging a request with `PX_SKIP_MODULE`. 
+By using `mod_setenvif` you can configure a set of rules to set the `PX_SKIP_MODULE` variable on a request.
 
-Consider the following examples:
-
-* You can consider skipping module for resources of your choice. This configuration will skip module on either `gif` or `jpg`:
+* Disable the PerimeterX module on either `gif` or `jpg` file extensions:
  
 ```
 SetEnvIf Request_URI "\.gif$" PX_SKIP_MODULE true
 SetEnvIf Request_URI "\.jpg$" PX_SKIP_MODULE true
 ```
 
-* This will skip module according to the referer:
+* Disable the PerimeterX module according to the referer:
 
 ```
 SetEnvIf Referer www\.mydomain\.example\.com PX_SKIP_MODULE true
 ```
 
-* This will skip all `HEAD` requests:
+* Disable the PerimeterX module on all `HEAD` requests:
 
 ```
 SetEnvIf Request_Method HEAD PX_SKIP_MODULE true
 ```
 
-* If you are using an internal test client of some sort you can skip px module by it's user agnet:
+* Disable the PerimeterX module based on the user-agent string:
 
 ```
 SetEnvIf User-Agent good-bot PX_SKIP_MODULE true
 ```
 
-> **Read more on `mod_setenvif` [here](https://httpd.apache.org/docs/current/mod/mod_setenvif.html).**
-
+Read more on `mod_setenvif` [here](https://httpd.apache.org/docs/current/mod/mod_setenvif.html).
+ 
+**`mod_env` is not supported with this feature. Though the syntax is similiar to mod_setenvif, the module is different. Mod_env will only run after the PerimeterX module in the Apache fixups phase. You should NOT use the `SetEnv` directive to set the `PX_SKIP_MODULE` variable.**
 
 ### <a name="sensitiveroutes"></a> `SensitiveRoutes`
 

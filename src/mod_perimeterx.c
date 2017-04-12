@@ -521,7 +521,7 @@ static const command_rec px_directives[] = {
 
 static void perimeterx_register_hooks(apr_pool_t *pool) {
     static const char *const asz_pre[] =
-    { "mod_setenvif.c", "mod_env.c", NULL };
+    { "mod_setenvif.c", NULL };
     ap_hook_post_read_request(px_hook_post_request, asz_pre, NULL, APR_HOOK_MIDDLE);
     ap_hook_child_init(px_hook_child_init, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_pre_config(px_hook_pre_config, NULL, NULL, APR_HOOK_MIDDLE);
