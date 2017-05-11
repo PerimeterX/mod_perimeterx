@@ -10,6 +10,7 @@
 #include "px_json.h"
 #include "px_utils.h"
 #include "curl_pool.h"
+#include <apr_thread_pool.h>
 
 #define INFO(server_rec, ...) \
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server_rec, "[mod_perimeterx]: " __VA_ARGS__)
@@ -29,6 +30,80 @@ static const char* FILE_EXT_WHITELIST[] = {
     ".css", ".bmp", ".tif", ".ttf", ".docx", ".woff2", ".js", ".pict", ".tiff", ".eot", ".xlsx", ".jpg", ".csv",
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar" };
+
+typedef struct report_data_t {
+    const char *url;
+    const char *activity;
+    const char *auth_header;
+    server_rec *server;
+} report_data;
+
+typedef struct report_activity_worker_t {
+
+} report_activity_worker;
+
+void thread_pool_stats(apr_thread_pool_t *t, request_context *ctx) {
+    INFO(ctx->r->server, "thread count: %ld", apr_thread_pool_threads_count(t));
+    INFO(ctx->r->server, "busy count: %ld", apr_thread_pool_busy_count(t));
+    INFO(ctx->r->server, "idle count: %ld", apr_thread_pool_idle_count(t));
+    INFO(ctx->r->server, "task run count: %ld", apr_thread_pool_tasks_run_count (t));
+}
+
+void *APR_THREAD_FUNC worker(apr_thread_t *t, void *arg) {
+    report_data *rd = (report_data*)arg;
+    /*request_context *ctx = (request_context*)arg;*/
+    INFO(rd->server, "We are in the thread function worker");
+    /*CURL *curl = curl_pool_get_wait(curl_pool);*/
+    CURL *curl = curl_easy_init(); // this should be a property of the pool shit
+
+    if (curl == NULL) {
+        ERROR(rd->server, "post_request: could not obtain curl handle");
+        return ((void*)t);
+    }
+    /*struct response_t response;*/
+    struct curl_slist *headers = NULL;
+    long status_code;
+    CURLcode res;
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+
+    headers = curl_slist_append(headers, rd->auth_header);
+    headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
+    headers = curl_slist_append(headers, EXPECT);
+
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_URL, rd->url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, rd->activity);
+    res = curl_easy_perform(curl); // do we want to do anything with the res ?
+    curl_slist_free_all(headers);
+    /*if (res == CURLE_OK) {*/
+        /*curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);*/
+        /*if (status_code == HTTP_OK) {*/
+            /*curl_pool_put(curl_pool, curl);*/
+            /*return response.data;*/
+        /*}*/
+        /*ERROR(r->server, "post_request: status: %ld, url: %s", status_code, url);*/
+    /*}*/
+    /*else {*/
+        /*size_t len = strlen(errbuf);*/
+        /*if (len) {*/
+            /*ERROR(r->server, "post_request failed: %s", errbuf);*/
+        /*}*/
+        /*else {*/
+            /*ERROR(r->server, "post_request failed: %s", curl_easy_strerror(res));*/
+        /*}*/
+    /*}*/
+    /*curl_pool_put(curl_pool, curl);*/
+    return ((void*)t);
+}
+
+void create_pool(apr_pool_t *p, apr_thread_pool_t **t) {
+    int n = 4; //TODO: configurable
+    /*apr_thread_pool_t *t = apr_p;*/
+    apr_thread_pool_create(t, n, n, p);
+    /*return t;*/
+}
 
 static char *post_request(const char *url, const char *payload, const char *auth_header, request_rec *r, curl_pool *curl_pool) {
     CURL *curl = curl_pool_get_wait(curl_pool);
@@ -169,9 +244,26 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 }
 
 static void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
+    apr_thread_pool_t **t = (apr_thread_pool_t**)apr_palloc(ctx->r->pool, sizeof(apr_thread_pool_t*));
+    /*apr_thread_pool_t *t = create_pool(ctx->r->pool);*/
+    create_pool(ctx->r->pool, t);
+
+    /*report_data *rd = (report_data*) apr_palloc(ctx->r->pool, sizeof(report_data));*/
+    /*rd->url = conf->activities_api_url;*/
+    /*rd->activity = ..*/
+
+    report_data rd;
+    rd.url = conf->activities_api_url;
+    rd.server = ctx->r->server;
+
+    thread_pool_stats(*t, ctx);
+
     const char *activity_type = request_valid ? PAGE_REQUESTED_ACTIVITY_TYPE : BLOCKED_ACTIVITY_TYPE;
     if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 || conf->send_page_activities) {
         char *activity = create_activity(activity_type, conf, ctx);
+        rd.activity = activity;
+        rd.auth_header = conf->auth_header;
+        apr_thread_pool_push(*t, worker, (void*)&rd, 0 ,0);
         if (!activity) {
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;
@@ -348,9 +440,14 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 }
 
 bool px_verify_request(request_context *ctx, px_config *conf) {
+
     bool request_valid = true;
 
     risk_response *risk_response;
+
+    /*apr_thread_create(&t, NULL, worker, (void*)ctx->r->server, ctx->r->pool);*/
+    /*apr_thread_yield();*/
+
 
     if (conf->captcha_enabled && ctx->px_captcha) {
         if (verify_captcha(ctx, conf)) {
@@ -373,6 +470,8 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
         }
     }
 
+    /*INFO(ctx->r->server, "yielding this thread");*/
+    /*apr_thread_yield();*/
     validation_result_t vr;
     if (ctx->px_cookie == NULL) {
         vr = NULL_COOKIE;

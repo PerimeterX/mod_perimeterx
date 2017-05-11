@@ -126,6 +126,8 @@ int px_handle_request(request_rec *r, px_config *conf) {
 // --------------------------------------------------------------------------------
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
+    // we would want the child init to init the curl pool
+    // first we need to check the connection between the process / config (copy?)
     curl_global_init(CURL_GLOBAL_ALL);
 }
 
