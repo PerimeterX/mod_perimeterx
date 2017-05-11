@@ -102,7 +102,6 @@ void create_pool(apr_pool_t *p, apr_thread_pool_t **t) {
     int n = 4; //TODO: configurable
     /*apr_thread_pool_t *t = apr_p;*/
     apr_thread_pool_create(t, n, n, p);
-    /*return t;*/
 }
 
 static char *post_request(const char *url, const char *payload, const char *auth_header, request_rec *r, curl_pool *curl_pool) {
@@ -244,9 +243,10 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 }
 
 static void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
-    apr_thread_pool_t **t = (apr_thread_pool_t**)apr_palloc(ctx->r->pool, sizeof(apr_thread_pool_t*));
+    /*apr_thread_pool_t **t = (apr_thread_pool_t**)apr_palloc(ctx->r->pool, sizeof(apr_thread_pool_t*));*/
     /*apr_thread_pool_t *t = create_pool(ctx->r->pool);*/
-    create_pool(ctx->r->pool, t);
+    apr_thread_pool_t *t = conf->thread_pool;
+    /*create_pool(ctx->r->pool, t);*/
 
     /*report_data *rd = (report_data*) apr_palloc(ctx->r->pool, sizeof(report_data));*/
     /*rd->url = conf->activities_api_url;*/
@@ -256,14 +256,16 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
     rd.url = conf->activities_api_url;
     rd.server = ctx->r->server;
 
-    thread_pool_stats(*t, ctx);
+    /*thread_pool_stats(t, ctx);*/
 
     const char *activity_type = request_valid ? PAGE_REQUESTED_ACTIVITY_TYPE : BLOCKED_ACTIVITY_TYPE;
     if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 || conf->send_page_activities) {
         char *activity = create_activity(activity_type, conf, ctx);
         rd.activity = activity;
         rd.auth_header = conf->auth_header;
-        apr_thread_pool_push(*t, worker, (void*)&rd, 0 ,0);
+        apr_thread_pool_push(t, worker, (void*)&rd, 0 ,0);
+        thread_pool_stats(t, ctx);
+        /*apr_thread_pool_push(*t, worker, (void*)&rd, 0 ,0);*/
         if (!activity) {
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <apr_tables.h>
 #include <http_protocol.h>
+#include <apr_thread_pool.h>
 
 #include "curl_pool.h"
 
@@ -36,6 +37,7 @@ typedef struct px_config_t {
     apr_array_header_t *sensitive_routes;
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
+    apr_thread_pool_t *thread_pool;
 } px_config;
 
 typedef enum {

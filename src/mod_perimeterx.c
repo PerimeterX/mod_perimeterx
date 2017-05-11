@@ -18,6 +18,7 @@
 #include "http_log.h"
 #include "apr_strings.h"
 #include "apr_escape.h"
+#include "apr_thread_pool.h"
 
 #include "px_types.h"
 #include "px_template.h"
@@ -128,6 +129,18 @@ int px_handle_request(request_rec *r, px_config *conf) {
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     // we would want the child init to init the curl pool
     // first we need to check the connection between the process / config (copy?)
+    //
+    px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
+    apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(p, sizeof(apr_thread_pool_t*));
+    int n = 100;
+    apr_thread_pool_create(t, n, n, p);
+    if (t == NULL || *t == NULL) {
+        INFO(s, "we had issues setting up the thread pool");
+        exit(1);
+    }
+    cfg->thread_pool = *t;
+    INFO(s, "the config score is: %d", cfg->blocking_score);
+    printf("the config score : %d", cfg->blocking_score);
     curl_global_init(CURL_GLOBAL_ALL);
 }
 
