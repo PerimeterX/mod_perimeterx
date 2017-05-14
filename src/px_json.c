@@ -223,4 +223,3 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     json_decref(j_response);
     return parsed_response;
 }
-

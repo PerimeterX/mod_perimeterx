@@ -25,21 +25,12 @@ static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
+static const char *THREAD_LOCAL_CURL_KEY = "local_curl";
 
 static const char* FILE_EXT_WHITELIST[] = {
     ".css", ".bmp", ".tif", ".ttf", ".docx", ".woff2", ".js", ".pict", ".tiff", ".eot", ".xlsx", ".jpg", ".csv",
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar" };
-
-typedef struct report_data_t {
-    const char *url;
-    /*char *activity;*/
-    char **activity;
-    const char *auth_header;
-    long api_timeout;
-    server_rec *server;
-    /*curl_pool *curl_pool;*/
-} report_data;
 
 void thread_pool_stats(apr_thread_pool_t *t, request_context *ctx) {
     INFO(ctx->r->server, "thread count: %ld", apr_thread_pool_threads_count(t));
@@ -50,16 +41,14 @@ void thread_pool_stats(apr_thread_pool_t *t, request_context *ctx) {
 
 void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     report_data *rd = (report_data*)arg;
-    /*request_context *ctx = (request_context*)arg;*/
     INFO(rd->server, "We are in the thread function worker");
-    /*CURL *curl = curl_pool_get_wait(curl_pool);*/
-    CURL *curl = curl_easy_init(); // this should be a property of the pool shit
-
-    if (curl == NULL) {
-        ERROR(rd->server, "post_request: could not obtain curl handle");
-        return ((void*)t);
+    CURL *curl = NULL;
+    apr_status_t status = apr_thread_data_get(&curl, THREAD_LOCAL_CURL_KEY, t);
+    if (curl == NULL || status != APR_SUCCESS) {
+        curl = curl_easy_init();
+        apr_thread_data_set(curl, THREAD_LOCAL_CURL_KEY, NULL, t);
     }
-    /*struct response_t response;*/
+
     struct curl_slist *headers = NULL;
     long status_code;
     CURLcode res;
@@ -80,16 +69,15 @@ void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, *rd->activity);
     res = curl_easy_perform(curl);
 
-    INFO(rd->server, "report_data: %ld, %s", rd->api_timeout, *rd->activity);
-    /*if (res != CURLE_OK) {*/
-        /*size_t len = strlen(errbuf);*/
-        /*if (len) {*/
-            /*ERROR(rd->server, "post_request failed: %s", errbuf);*/
-        /*}*/
-        /*else {*/
-            /*ERROR(rd->server, "post_request failed: %s", curl_easy_strerror(res));*/
-        /*}*/
-    /*}*/
+    if (res != CURLE_OK) {
+        /*INFO(rd->server, "activity_reporter: could not send activity");*/
+        size_t len = strlen(errbuf);
+        if (len) {
+            INFO(rd->server, "send_activity failed: %s", errbuf);
+        } else {
+            INFO(rd->server, "send_activity failed: %s", curl_easy_strerror(res));
+        }
+    }
 
     free(*rd->activity);
     curl_slist_free_all(headers);
@@ -139,8 +127,7 @@ static char *post_request(const char *url, const char *payload, const char *auth
         size_t len = strlen(errbuf);
         if (len) {
             ERROR(r->server, "post_request failed: %s", errbuf);
-        }
-        else {
+        } else {
             ERROR(r->server, "post_request failed: %s", curl_easy_strerror(res));
         }
     }
@@ -236,33 +223,40 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 }
 
 static void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
-    report_data *rd = (report_data*)apr_palloc(ctx->r->server->process->pool, sizeof(report_data));
-    /*report_data *rd = (report_data*)apr_palloc(ctx->r->server->process->pool, sizeof(report_data));*/
-
-    rd->url = conf->activities_api_url;
-    rd->server = ctx->r->server;
-    rd->api_timeout = conf->api_timeout;
 
     const char *activity_type = request_valid ? PAGE_REQUESTED_ACTIVITY_TYPE : BLOCKED_ACTIVITY_TYPE;
+
     if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 || conf->send_page_activities) {
-        char **activity = (char**) apr_palloc(ctx->r->server->process->pool, sizeof(char*));
+        char **activity = (char**) apr_palloc(ctx->r->server->process->pool, sizeof(char*)); // TODO; change pool
         *activity = create_activity(activity_type, conf, ctx);
         if (!*activity) {
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;
         }
-        rd->activity = activity;
-        rd->auth_header = conf->auth_header;
-        apr_thread_pool_t **t = conf->activity_reporter->thread_pool;
-        apr_thread_pool_push(*t, send_activity, (void*)rd, 0 ,0);
-        thread_pool_stats(*t, ctx);
-        /*char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);*/
-        /*free(activity);*/
-        /*if (resp) {*/
-            /*free(resp);*/
-        /*} else {*/
-            /*ERROR(ctx->r->server, "post_verification: (%s) send failed", activity_type);*/
-        /*}*/
+
+        // sending in a background thread
+        if (conf->enable_background_activity_send) {
+            report_data *rd = (report_data*)apr_palloc(ctx->r->server->process->pool, sizeof(report_data));
+            rd->url = conf->activities_api_url;
+            rd->server = ctx->r->server;
+            rd->api_timeout = conf->api_timeout;
+
+            rd->activity = activity;
+            rd->auth_header = conf->auth_header;
+            apr_thread_pool_t **t = conf->activity_reporter->thread_pool;
+            apr_thread_pool_push(*t, send_activity, (void*)rd, APR_THREAD_TASK_PRIORITY_LOW ,0);
+            thread_pool_stats(*t, ctx);
+
+        } else {
+            // regular (sync) send
+            char *resp = post_request(conf->activities_api_url, *activity, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);
+            free(*activity);
+            if (resp) {
+                free(resp);
+            } else {
+                ERROR(ctx->r->server, "post_verification: (%s) send failed", activity_type);
+            }
+        }
     }
 }
 

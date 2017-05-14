@@ -67,7 +67,6 @@ int render_page(request_rec *r, const request_context *ctx, const px_config *con
 }
 
 int px_handle_request(request_rec *r, px_config *conf) {
-    INFO(r->server, "we are running the apache module");
     if (!px_should_verify_request(r, conf)) {
         return OK;
     }
@@ -129,28 +128,23 @@ int px_handle_request(request_rec *r, px_config *conf) {
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
-    int n = 100;
-
-    activity_reporter *reporter = (activity_reporter*) apr_palloc(p, sizeof(activity_reporter));
-    reporter->api_url = cfg->activities_api_url;
-    apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(p, sizeof(apr_thread_pool_t*));
-    if (t == NULL || *t == NULL) {
-        INFO(s, "we had issues setting up the thread pool");
-        exit(1);
+    if (cfg->enable_background_activity_send) {
+        //
+        if (cfg->activity_report_max_threads <= cfg->activity_report_threads) {
+            cfg->activity_report_max_threads = cfg->activity_report_threads;
+        }
+        activity_reporter *reporter = (activity_reporter*) apr_palloc(s->process->pool, sizeof(activity_reporter));
+        apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(p, sizeof(apr_thread_pool_t*));
+        apr_thread_pool_create(t, cfg->activity_report_threads, cfg->activity_report_max_threads, p);// TODO: check status
+        if (t == NULL || *t == NULL) {
+            ERROR(s, "error while setting activity_reporter thread pool");
+            exit(1);
+        }
+        reporter->thread_pool = t;
+        reporter->mem_pool = &s->process->pool;
+        cfg->activity_reporter = reporter;
     }
-
-    apr_thread_pool_create(t, n, n, p);
-    reporter->thread_pool = t;
-    reporter->auth_header = cfg->auth_header;
-    reporter->mem_pool = &p;
-    reporter->curl = (CURL **)apr_pcalloc(p, sizeof(CURL*));
-    *reporter->curl = curl_easy_init();
-    cfg->activity_reporter = reporter;
-    /*cfg->thread_pool = *t;*/
-    INFO(s, "the config score is: %d", cfg->blocking_score);
-    //printf("the config score : %d", cfg->blocking_score);
     curl_global_init(CURL_GLOBAL_ALL);
-    INFO(s, "we managed to starat the apache");
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
@@ -396,6 +390,26 @@ static const char *set_custom_logo(cmd_parms *cmd, void *config, const char *cus
     return NULL;
 }
 
+static const char *set_activity_report_threads(cmd_parms *cmd, void *config, const char *threads) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->activity_report_threads = atoi(threads);
+    conf->enable_background_activity_send = true;
+    return NULL;
+}
+
+static const char *set_activity_report_max_threads(cmd_parms *cmd, void *config, const char *max_threads) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->activity_report_max_threads = atoi(max_threads);
+    conf->enable_background_activity_send = true;
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -409,7 +423,7 @@ static void *create_config(apr_pool_t *p) {
         conf->send_page_activities = true;
         conf->blocking_score = 70;
         conf->captcha_enabled = true;
-        conf->module_version = "Apache Module v2.1.3";
+        conf->module_version = "Apache Module v2.2.0-RC";
         conf->skip_mod_by_envvar = false;
         conf->curl_pool_size = 40;
         conf->base_url = DEFAULT_BASE_URL;
@@ -430,6 +444,7 @@ static void *create_config(apr_pool_t *p) {
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
+        conf->enable_background_activity_send = false;
     }
     return conf;
 }
@@ -545,6 +560,16 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable blocking by hostname - list of hostnames on which PX module will be enabled for"),
+    AP_INIT_TAKE1("ActivityReportThreads",
+            set_activity_report_threads,
+            NULL,
+            OR_ALL,
+            "Number of threads for background activities send"),
+    AP_INIT_TAKE1("ActivityReportMaxThreads",
+            set_activity_report_max_threads,
+            NULL,
+            OR_ALL,
+            "Max number of threads for background activities send"),
     { NULL }
 };
 

@@ -11,12 +11,15 @@
 typedef struct activity_reporter_t {
     apr_thread_pool_t **thread_pool;
     apr_pool_t **mem_pool;
-    const char *api_url;
+} activity_reporter;
+
+typedef struct report_data_t {
+    const char *url;
+    char **activity;
     const char *auth_header;
     long api_timeout;
-    //curl_pool *curl_pool
-    CURL **curl; // curl pool ?
-} activity_reporter;
+    server_rec *server;
+} report_data;
 
 typedef struct px_config_t {
     const char *app_id;
@@ -48,6 +51,9 @@ typedef struct px_config_t {
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
     activity_reporter *activity_reporter;
+    int activity_report_threads;
+    int activity_report_max_threads;
+    bool enable_background_activity_send;
 } px_config;
 
 typedef enum {
