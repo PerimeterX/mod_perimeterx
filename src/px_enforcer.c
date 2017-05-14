@@ -59,9 +59,9 @@ void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
     headers = curl_slist_append(headers, EXPECT);
 
-    INFO(rd->server, "url: %s", rd->url);
-    INFO(rd->server, "auth-token: %s", rd->auth_header);
-    INFO(rd->server, "activity: %s", *rd->activity);
+    /*INFO(rd->server, "url: %s", rd->url);*/
+    /*INFO(rd->server, "auth-token: %s", rd->auth_header);*/
+    /*INFO(rd->server, "activity: %s", *rd->activity);*/
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, rd->api_timeout);
@@ -70,7 +70,6 @@ void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
-        /*INFO(rd->server, "activity_reporter: could not send activity");*/
         size_t len = strlen(errbuf);
         if (len) {
             INFO(rd->server, "send_activity failed: %s", errbuf);
