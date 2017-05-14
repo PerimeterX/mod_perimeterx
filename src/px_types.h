@@ -14,6 +14,7 @@ typedef struct activity_reporter_t {
     const char *api_url;
     const char *auth_header;
     long api_timeout;
+    //curl_pool *curl_pool
     CURL **curl; // curl pool ?
 } activity_reporter;
 

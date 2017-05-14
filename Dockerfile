@@ -21,10 +21,13 @@ RUN apt-get install -y \
         libjson0 \
         libjson0-dev \
         devscripts
+        apache2-dbg libapr1-dbg libaprutil1-dbg gdb
 
 WORKDIR tmp
 RUN git clone https://github.com/PerimeterX/mod_perimeterx.git
 RUN cd mod_perimeterx/src && make && make install
+
+RUN cp perimeterx.conf.shikloshi /etc/apache2/mods-available/perimeterx.conf
 
 EXPOSE 80
 

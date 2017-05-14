@@ -67,6 +67,7 @@ int render_page(request_rec *r, const request_context *ctx, const px_config *con
 }
 
 int px_handle_request(request_rec *r, px_config *conf) {
+    INFO(r->server, "we are running the apache module");
     if (!px_should_verify_request(r, conf)) {
         return OK;
     }
@@ -149,6 +150,7 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     INFO(s, "the config score is: %d", cfg->blocking_score);
     //printf("the config score : %d", cfg->blocking_score);
     curl_global_init(CURL_GLOBAL_ALL);
+    INFO(s, "we managed to starat the apache");
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
