@@ -32,6 +32,7 @@ static const char* FILE_EXT_WHITELIST[] = {
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar" };
 
+//TODO: remove
 void thread_pool_stats(apr_thread_pool_t *t, request_context *ctx) {
     INFO(ctx->r->server, "thread count: %ld", apr_thread_pool_threads_count(t));
     INFO(ctx->r->server, "busy count: %ld", apr_thread_pool_busy_count(t));
@@ -41,6 +42,8 @@ void thread_pool_stats(apr_thread_pool_t *t, request_context *ctx) {
 
 void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     report_data *rd = (report_data*)arg;
+    INFO(rd->server, "send_activity: sending activity in background thread");
+
     CURL *curl = NULL;
     apr_status_t status = apr_thread_data_get(&curl, THREAD_LOCAL_CURL_KEY, t);
     if (curl == NULL || status != APR_SUCCESS) {
@@ -58,9 +61,6 @@ void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
     headers = curl_slist_append(headers, EXPECT);
 
-    /*INFO(rd->server, "url: %s", rd->url);*/
-    /*INFO(rd->server, "auth-token: %s", rd->auth_header);*/
-    /*INFO(rd->server, "activity: %s", *rd->activity);*/
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, rd->api_timeout);
@@ -244,8 +244,6 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
             rd->auth_header = conf->auth_header;
             apr_thread_pool_t *t = conf->thread_pool;
             apr_thread_pool_push(t, send_activity, (void*)rd, APR_THREAD_TASK_PRIORITY_LOW ,0);
-            /*thread_pool_stats(t, ctx);*/
-
         } else {
             // regular (sync) send
             char *resp = post_request(conf->activities_api_url, *activity, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);
@@ -424,12 +422,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 bool px_verify_request(request_context *ctx, px_config *conf) {
 
     bool request_valid = true;
-
     risk_response *risk_response;
-
-    /*apr_thread_create(&t, NULL, worker, (void*)ctx->r->server, ctx->r->pool);*/
-    /*apr_thread_yield();*/
-
 
     if (conf->captcha_enabled && ctx->px_captcha) {
         if (verify_captcha(ctx, conf)) {
@@ -452,8 +445,6 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
         }
     }
 
-    /*INFO(ctx->r->server, "yielding this thread");*/
-    /*apr_thread_yield();*/
     validation_result_t vr;
     if (ctx->px_cookie == NULL) {
         vr = NULL_COOKIE;
