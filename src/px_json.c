@@ -61,7 +61,6 @@ void create_activity(const char *activity_type, const px_config *conf, const req
     *activity_str = json_dumps(activity, JSON_COMPACT);
 
     json_decref(activity);
-    /*return request_str;*/
 }
 
 json_t *headers_to_json_helper(const apr_array_header_t *arr) {
