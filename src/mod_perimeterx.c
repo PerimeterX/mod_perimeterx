@@ -133,15 +133,14 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
         if (cfg->activity_report_max_threads <= cfg->activity_report_threads) {
             cfg->activity_report_max_threads = cfg->activity_report_threads;
         }
-        activity_reporter *reporter = (activity_reporter*) apr_palloc(s->process->pool, sizeof(activity_reporter));
-        apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(p, sizeof(apr_thread_pool_t*));
-        apr_thread_pool_create(t, cfg->activity_report_threads, cfg->activity_report_max_threads, p);// TODO: check status
-        if (t == NULL || *t == NULL) {
+        apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(s->process->pool, sizeof(apr_thread_pool_t*));
+        /*apr_thread_pool_t *t = (apr_thread_pool_t**) apr_palloc(s->process->pool, sizeof(apr_thread_pool_t));*/
+        apr_thread_pool_create(t, cfg->activity_report_threads, cfg->activity_report_max_threads, s->process->pool);// TODO: check status
+        if (t == NULL) {
             ERROR(s, "error while setting activity_reporter thread pool");
             exit(1);
         }
-        reporter->thread_pool = t;
-        cfg->activity_reporter = reporter;
+        cfg->thread_pool = *t;
     }
     curl_global_init(CURL_GLOBAL_ALL);
 }

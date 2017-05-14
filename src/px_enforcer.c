@@ -243,9 +243,9 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
 
             rd->activity = activity;
             rd->auth_header = conf->auth_header;
-            apr_thread_pool_t **t = conf->activity_reporter->thread_pool;
-            apr_thread_pool_push(*t, send_activity, (void*)rd, APR_THREAD_TASK_PRIORITY_LOW ,0);
-            thread_pool_stats(*t, ctx);
+            apr_thread_pool_t *t = conf->thread_pool;
+            apr_thread_pool_push(t, send_activity, (void*)rd, APR_THREAD_TASK_PRIORITY_LOW ,0);
+            /*thread_pool_stats(t, ctx);*/
 
         } else {
             // regular (sync) send

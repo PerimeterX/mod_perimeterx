@@ -49,7 +49,7 @@ typedef struct px_config_t {
     apr_array_header_t *sensitive_routes;
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
-    activity_reporter *activity_reporter;
+    apr_thread_pool_t *thread_pool;
     int activity_report_threads;
     int activity_report_max_threads;
     bool enable_background_activity_send;
