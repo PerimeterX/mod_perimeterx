@@ -135,7 +135,6 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
             cfg->activity_report_max_threads = cfg->activity_report_threads;
         }
         apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(s->process->pool, sizeof(apr_thread_pool_t*));
-        /*apr_thread_pool_t *t = (apr_thread_pool_t**) apr_palloc(s->process->pool, sizeof(apr_thread_pool_t));*/
         if (APR_SUCCESS != apr_thread_pool_create(t, cfg->activity_report_threads, cfg->activity_report_max_threads, s->process->pool)) {
             ERROR(s, "error while setting activity_reporter thread pool, reverting to activities send in sync mode");
             cfg->enable_background_activity_send = false;
