@@ -4,8 +4,17 @@
 #include <stdbool.h>
 #include <apr_tables.h>
 #include <http_protocol.h>
+#include <apr_thread_pool.h>
 
 #include "curl_pool.h"
+
+typedef struct report_data_t {
+    const char *url;
+    char **activity;
+    const char *auth_header;
+    long api_timeout;
+    server_rec *server;
+} report_data;
 
 typedef struct px_config_t {
     const char *app_id;
@@ -36,6 +45,10 @@ typedef struct px_config_t {
     apr_array_header_t *sensitive_routes;
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
+    apr_thread_pool_t *thread_pool;
+    int activity_report_threads;
+    int activity_report_max_threads;
+    bool enable_background_activity_send;
 } px_config;
 
 typedef enum {

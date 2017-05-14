@@ -1,6 +1,6 @@
 CC = apxs
 CFLAGS = -Wc,-std=gnu99 -c
-LDFLAGS = `pkg-config --cflags --libs jansson openssl libcurl json-c`
+LDFLAGS = `pkg-config --cflags --libs apr-util-1 jansson openssl libcurl json-c`
 DBG_CFLAGS = -g -DDEBUG
 
 SOURCES = mod_perimeterx.c curl_pool.c px_cookie.c px_json.c px_utils.c px_enforcer.c px_template.c mustach-json-c.c mustach.c

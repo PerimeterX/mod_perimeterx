@@ -18,6 +18,7 @@
 #include "http_log.h"
 #include "apr_strings.h"
 #include "apr_escape.h"
+#include "apr_thread_pool.h"
 
 #include "px_types.h"
 #include "px_template.h"
@@ -127,6 +128,20 @@ int px_handle_request(request_rec *r, px_config *conf) {
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     curl_global_init(CURL_GLOBAL_ALL);
+    px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
+    if (cfg->enable_background_activity_send) {
+        // max threads number should be at least the initial thread pool size
+        if (cfg->activity_report_max_threads <= cfg->activity_report_threads) {
+            cfg->activity_report_max_threads = cfg->activity_report_threads;
+        }
+        apr_thread_pool_t **t = (apr_thread_pool_t**) apr_palloc(s->process->pool, sizeof(apr_thread_pool_t*));
+        if (APR_SUCCESS != apr_thread_pool_create(t, cfg->activity_report_threads, cfg->activity_report_max_threads, s->process->pool)) {
+            ERROR(s, "error while setting activity_reporter thread pool, reverting to activities send in sync mode");
+            cfg->enable_background_activity_send = false;
+        } else {
+            cfg->thread_pool = *t;
+        }
+    }
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
@@ -372,6 +387,26 @@ static const char *set_custom_logo(cmd_parms *cmd, void *config, const char *cus
     return NULL;
 }
 
+static const char *set_activity_report_threads(cmd_parms *cmd, void *config, const char *threads) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->activity_report_threads = atoi(threads);
+    conf->enable_background_activity_send = true;
+    return NULL;
+}
+
+static const char *set_activity_report_max_threads(cmd_parms *cmd, void *config, const char *max_threads) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->activity_report_max_threads = atoi(max_threads);
+    conf->enable_background_activity_send = true;
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -385,7 +420,7 @@ static void *create_config(apr_pool_t *p) {
         conf->send_page_activities = true;
         conf->blocking_score = 70;
         conf->captcha_enabled = true;
-        conf->module_version = "Apache Module v2.1.3";
+        conf->module_version = "Apache Module v2.2.0-RC";
         conf->skip_mod_by_envvar = false;
         conf->curl_pool_size = 40;
         conf->base_url = DEFAULT_BASE_URL;
@@ -406,6 +441,7 @@ static void *create_config(apr_pool_t *p) {
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
+        conf->enable_background_activity_send = false;
     }
     return conf;
 }
@@ -521,6 +557,16 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable blocking by hostname - list of hostnames on which PX module will be enabled for"),
+    AP_INIT_TAKE1("ActivityReportThreads",
+            set_activity_report_threads,
+            NULL,
+            OR_ALL,
+            "Number of threads for background activities send"),
+    AP_INIT_TAKE1("ActivityReportMaxThreads",
+            set_activity_report_max_threads,
+            NULL,
+            OR_ALL,
+            "Max number of threads for background activities send"),
     { NULL }
 };
 

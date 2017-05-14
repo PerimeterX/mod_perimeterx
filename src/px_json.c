@@ -17,7 +17,7 @@ static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 // format json requests
 //
 
-char *create_activity(const char *activity_type, const px_config *conf, const request_context *ctx) {
+void create_activity(const char *activity_type, const px_config *conf, const request_context *ctx, char **activity_str) {
     json_t *details = json_pack("{s:i, s:s, s:s, s:s, s:s}",
             "block_score", ctx->score,
             "block_reason", BLOCK_REASON_STR[ctx->block_reason],
@@ -58,10 +58,9 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         json_object_set_new(activity, "vid", json_string(ctx->vid));
     }
 
-    char *request_str = json_dumps(activity, JSON_COMPACT);
+    *activity_str = json_dumps(activity, JSON_COMPACT);
 
     json_decref(activity);
-    return request_str;
 }
 
 json_t *headers_to_json_helper(const apr_array_header_t *arr) {
@@ -101,10 +100,6 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     if (ctx->px_cookie) {
         json_object_set_new(j_additional, "px_cookie", json_string(ctx->px_cookie_decrypted));
     }
-    if (ctx->px_cookie_orig) {
-        json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
-    }
-
     if (ctx->px_cookie_orig) {
         json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
     }
@@ -227,4 +222,3 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     json_decref(j_response);
     return parsed_response;
 }
-
