@@ -105,10 +105,6 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
         json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
     }
 
-    if (ctx->px_cookie_orig) {
-        json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
-    }
-
     // risk api object
     json_t *j_risk = json_pack("{s:O,s:O}",
             "request", j_request,

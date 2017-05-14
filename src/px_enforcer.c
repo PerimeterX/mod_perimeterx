@@ -104,7 +104,7 @@ void create_pool(apr_pool_t *p, apr_thread_pool_t **t) {
     apr_thread_pool_create(t, n, n, p);
 }
 
-static char *post_request(const char *url, const char *payload, const char *auth_header, request_rec *r, curl_pool *curl_pool) {
+static char *post_request(const char *url, const char *payload, const char *auth_header, long api_timeout, request_rec *r, curl_pool *curl_pool) {
     CURL *curl = curl_pool_get_wait(curl_pool);
 
     if (curl == NULL) {
@@ -130,6 +130,7 @@ static char *post_request(const char *url, const char *payload, const char *auth
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, api_timeout);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
     res = curl_easy_perform(curl);
@@ -229,7 +230,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
         return true;
     }
 
-    char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, ctx->r, conf->curl_pool);
+    char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);
     free(payload);
     if (!response_str) {
         INFO(ctx->r->server, "verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->full_url);
@@ -245,7 +246,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 static void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
     /*apr_thread_pool_t **t = (apr_thread_pool_t**)apr_palloc(ctx->r->pool, sizeof(apr_thread_pool_t*));*/
     /*apr_thread_pool_t *t = create_pool(ctx->r->pool);*/
-    apr_thread_pool_t *t = conf->thread_pool;
+    /*apr_thread_pool_t *t = conf->thread_pool;*/
     /*create_pool(ctx->r->pool, t);*/
 
     /*report_data *rd = (report_data*) apr_palloc(ctx->r->pool, sizeof(report_data));*/
@@ -263,14 +264,15 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
         char *activity = create_activity(activity_type, conf, ctx);
         rd.activity = activity;
         rd.auth_header = conf->auth_header;
-        apr_thread_pool_push(t, worker, (void*)&rd, 0 ,0);
-        thread_pool_stats(t, ctx);
-        /*apr_thread_pool_push(*t, worker, (void*)&rd, 0 ,0);*/
+        apr_thread_pool_t **t = conf->activity_reporter->thread_pool;
+        apr_thread_pool_push(*t, worker, (void*)&rd, 0 ,0);
+        /*apr_thread_pool_push(conf->t, worker, (void*)&rd, 0 ,0);*/
+        thread_pool_stats(*t, ctx);
         if (!activity) {
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;
         }
-        char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, ctx->r, conf->curl_pool);
+        char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);
         free(activity);
         if (resp) {
             free(resp);
@@ -340,7 +342,7 @@ risk_response* risk_api_get(const request_context *ctx, const px_config *conf) {
         return NULL;
     }
     INFO(ctx->r->server, "risk payload: %s", risk_payload);
-    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, conf->auth_header, ctx->r, conf->curl_pool);
+    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);
     INFO(ctx->r->server, "risk response: %s", risk_response_str);
     free(risk_payload);
     if (!risk_response_str) {

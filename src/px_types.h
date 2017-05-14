@@ -8,6 +8,15 @@
 
 #include "curl_pool.h"
 
+typedef struct activity_reporter_t {
+    apr_thread_pool_t **thread_pool;
+    apr_pool_t **mem_pool;
+    const char *api_url;
+    const char *auth_header;
+    long api_timeout;
+    CURL **curl; // curl pool ?
+} activity_reporter;
+
 typedef struct px_config_t {
     const char *app_id;
     const char *cookie_key;
@@ -37,7 +46,7 @@ typedef struct px_config_t {
     apr_array_header_t *sensitive_routes;
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
-    apr_thread_pool_t *thread_pool;
+    activity_reporter *activity_reporter;
 } px_config;
 
 typedef enum {
