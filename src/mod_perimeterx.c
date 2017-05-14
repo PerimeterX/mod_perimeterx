@@ -129,7 +129,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
     if (cfg->enable_background_activity_send) {
-        //
+        // max threads number should be at least the initial thread pool size
         if (cfg->activity_report_max_threads <= cfg->activity_report_threads) {
             cfg->activity_report_max_threads = cfg->activity_report_threads;
         }
@@ -141,7 +141,6 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
             exit(1);
         }
         reporter->thread_pool = t;
-        reporter->mem_pool = &s->process->pool;
         cfg->activity_reporter = reporter;
     }
     curl_global_init(CURL_GLOBAL_ALL);

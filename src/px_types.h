@@ -10,7 +10,6 @@
 
 typedef struct activity_reporter_t {
     apr_thread_pool_t **thread_pool;
-    apr_pool_t **mem_pool;
 } activity_reporter;
 
 typedef struct report_data_t {

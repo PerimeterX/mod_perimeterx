@@ -41,7 +41,6 @@ void thread_pool_stats(apr_thread_pool_t *t, request_context *ctx) {
 
 void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     report_data *rd = (report_data*)arg;
-    INFO(rd->server, "We are in the thread function worker");
     CURL *curl = NULL;
     apr_status_t status = apr_thread_data_get(&curl, THREAD_LOCAL_CURL_KEY, t);
     if (curl == NULL || status != APR_SUCCESS) {
@@ -79,6 +78,7 @@ void *APR_THREAD_FUNC send_activity(apr_thread_t *t, void *arg) {
     }
 
     free(*rd->activity);
+    free(rd->activity);
     curl_slist_free_all(headers);
     return ((void*)t);
 }
@@ -226,8 +226,9 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
     const char *activity_type = request_valid ? PAGE_REQUESTED_ACTIVITY_TYPE : BLOCKED_ACTIVITY_TYPE;
 
     if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 || conf->send_page_activities) {
-        char **activity = (char**) apr_palloc(ctx->r->server->process->pool, sizeof(char*)); // TODO; change pool
-        *activity = create_activity(activity_type, conf, ctx);
+        char **activity = (char**) malloc(sizeof(char*));
+        /*char **activity = (char**) apr_palloc(ctx->r->server->process->pool, sizeof(char*)); // TODO; change pool*/
+        create_activity(activity_type, conf, ctx, activity);
         if (!*activity) {
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;
@@ -250,6 +251,7 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
             // regular (sync) send
             char *resp = post_request(conf->activities_api_url, *activity, conf->auth_header, conf->api_timeout, ctx->r, conf->curl_pool);
             free(*activity);
+            free(activity);
             if (resp) {
                 free(resp);
             } else {
