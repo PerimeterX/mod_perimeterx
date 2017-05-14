@@ -227,7 +227,6 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
 
     if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 || conf->send_page_activities) {
         char **activity = (char**) malloc(sizeof(char*));
-        /*char **activity = (char**) apr_palloc(ctx->r->server->process->pool, sizeof(char*)); // TODO; change pool*/
         create_activity(activity_type, conf, ctx, activity);
         if (!*activity) {
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
