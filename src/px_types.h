@@ -8,10 +8,6 @@
 
 #include "curl_pool.h"
 
-typedef struct activity_reporter_t {
-    apr_thread_pool_t **thread_pool;
-} activity_reporter;
-
 typedef struct report_data_t {
     const char *url;
     char **activity;
