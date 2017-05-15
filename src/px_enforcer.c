@@ -58,6 +58,7 @@ static char *post_request(const char *url, const char *payload, const char *auth
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
+
     res = curl_easy_perform(curl);
     curl_slist_free_all(headers);
 
@@ -165,6 +166,9 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, ctx, conf->curl_pool);
     free(payload);
     if (!response_str) {
+        if (ctx->pass_reason == PASSED_WITH_TIMEOUT) {
+            ctx->pass_reason = PASSED_WITH_CAPTCHA_TIMEOUT;
+        }
         INFO(ctx->r->server, "verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->full_url);
         return false; // in case we are getting non 200 response
     }
@@ -259,6 +263,9 @@ risk_response* risk_api_get(request_context *ctx, const px_config *conf) {
     INFO(ctx->r->server, "risk response: %s", risk_response_str);
     free(risk_payload);
     if (!risk_response_str) {
+        if (ctx->pass_reason == PASSED_WITH_TIMEOUT) {
+            ctx->pass_reason = PASSED_WITH_S2S_TIMEOUT;
+        }
         return NULL;
     }
 
