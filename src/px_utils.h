@@ -10,6 +10,7 @@ struct response_t {
     char* data;
     size_t size;
     server_rec *server;
+    const char *app_id;
 };
 
 size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream);

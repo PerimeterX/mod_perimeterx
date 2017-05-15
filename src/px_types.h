@@ -92,7 +92,7 @@ typedef struct risk_cookie_t {
 } risk_cookie;
 
 typedef struct risk_response_t {
-    const char* uuid;
+    const char *uuid;
     int status;
     int score;
 } risk_response;
@@ -105,6 +105,7 @@ typedef struct captcha_response_t {
 } captcha_response;
 
 typedef struct request_context_t {
+    const char *app_id;
     const char *px_cookie;
     const char *px_cookie_decrypted;
     const char *px_captcha;

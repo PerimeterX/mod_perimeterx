@@ -4,18 +4,12 @@
 #include <apr_strings.h>
 #include <http_log.h>
 
-#define INFO(server_rec, ...) \
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server_rec, "[mod_perimeterx]: " __VA_ARGS__)
-
-#define ERROR(server_rec, ...) \
-    ap_log_error(APLOG_MARK, APLOG_ERR, 0, server_rec, "[mod_perimeterx]:" __VA_ARGS__)
-
 size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream) {
     struct response_t *res = (struct response_t*)stream;
     size_t realsize = size * nmemb;
     res->data = realloc(res->data, res->size + realsize + 1);
     if (res->data == NULL) {
-        ERROR(res->server, "not enough memory for post_request buffer alloc");
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, res->server, "[%s]: not enough memory for post_request buffer alloc", res->app_id);
         return 0;
     }
     memcpy(&(res->data[res->size]), contents, realsize);
