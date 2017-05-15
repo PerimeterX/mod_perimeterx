@@ -30,11 +30,11 @@ static const char* FILE_EXT_WHITELIST[] = {
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar" };
 
-static char *post_request(const char *url, const char *payload, const char *auth_header, request_rec *r, curl_pool *curl_pool) {
+static char *post_request(const char *url, const char *payload, const char *auth_header, request_context *ctx, curl_pool *curl_pool) {
     CURL *curl = curl_pool_get_wait(curl_pool);
 
     if (curl == NULL) {
-        ERROR(r->server, "post_request: could not obtain curl handle");
+        ERROR(ctx->r->server, "post_request: could not obtain curl handle");
         return NULL;
     }
     struct response_t response;
@@ -46,7 +46,7 @@ static char *post_request(const char *url, const char *payload, const char *auth
 
     response.data = malloc(1);
     response.size = 0;
-    response.server = r->server;
+    response.server = ctx->r->server;
 
     headers = curl_slist_append(headers, auth_header);
     headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
@@ -60,22 +60,28 @@ static char *post_request(const char *url, const char *payload, const char *auth
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
     res = curl_easy_perform(curl);
     curl_slist_free_all(headers);
-    if (res == CURLE_OK) {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code == HTTP_OK) {
-            curl_pool_put(curl_pool, curl);
-            return response.data;
-        }
-        ERROR(r->server, "post_request: status: %ld, url: %s", status_code, url);
-    }
-    else {
-        size_t len = strlen(errbuf);
-        if (len) {
-            ERROR(r->server, "post_request failed: %s", errbuf);
-        }
-        else {
-            ERROR(r->server, "post_request failed: %s", curl_easy_strerror(res));
-        }
+
+    size_t error_len;
+    switch(res) {
+        case CURLE_OK:
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+            if (status_code == HTTP_OK) {
+                curl_pool_put(curl_pool, curl);
+                return response.data;
+            }
+            ERROR(ctx->r->server, "post_request: status: %ld, url: %s", status_code, url);
+            break;
+        case CURLE_OPERATION_TIMEDOUT:
+            ctx->pass_reason = PASSED_WITH_TIMEOUT;
+            break;
+        default:
+            ctx->pass_reason = PASSED_WITH_ERROR;
+            error_len = strlen(errbuf);
+            if (error_len) {
+                ERROR(ctx->r->server, "post_request failed: %s", errbuf);
+            } else {
+                ERROR(ctx->r->server, "post_request failed: %s", curl_easy_strerror(res));
+            }
     }
     curl_pool_put(curl_pool, curl);
     free(response.data);
@@ -152,10 +158,11 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     INFO(ctx->r->server, "verify_captcha: request - (%s)", payload);
     if (!payload) {
         INFO(ctx->r->server, "verify_captcha: failed to format captcha payload. url: (%s)", ctx->full_url);
+        ctx->pass_reason = PASSED_WITH_ERROR;
         return true;
     }
 
-    char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, ctx->r, conf->curl_pool);
+    char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, ctx, conf->curl_pool);
     free(payload);
     if (!response_str) {
         INFO(ctx->r->server, "verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->full_url);
@@ -165,7 +172,9 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     INFO(ctx->r->server, "verify_captcha: server response (%s)", response_str);
     captcha_response *c = parse_captcha_response(response_str, ctx);
     free(response_str);
-    return (c && c->status == 0);
+    bool passed = (c && c->status == 0);
+    if (passed) ctx->pass_reason = PASSED_WITH_CAPTCHA;
+    return passed;
 }
 
 static void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
@@ -176,7 +185,7 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;
         }
-        char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, ctx->r, conf->curl_pool);
+        char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, ctx, conf->curl_pool);
         free(activity);
         if (resp) {
             free(resp);
@@ -240,13 +249,13 @@ bool px_should_verify_request(request_rec *r, px_config *conf) {
     return true;
 }
 
-risk_response* risk_api_get(const request_context *ctx, const px_config *conf) {
+risk_response* risk_api_get(request_context *ctx, const px_config *conf) {
     char *risk_payload = create_risk_payload(ctx, conf);
     if (!risk_payload) {
         return NULL;
     }
     INFO(ctx->r->server, "risk payload: %s", risk_payload);
-    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, conf->auth_header, ctx->r, conf->curl_pool);
+    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, conf->auth_header, ctx, conf->curl_pool);
     INFO(ctx->r->server, "risk response: %s", risk_response_str);
     free(risk_payload);
     if (!risk_response_str) {
@@ -339,6 +348,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->headers = r->headers_in;
     ctx->block_reason = NO_BLOCKING;
     ctx->call_reason = NONE;
+    ctx->pass_reason = DIDNT_PASS;
     ctx->block_enabled = enable_block_for_hostname(r, conf->enabled_hostnames);
     ctx->r = r;
 
@@ -397,6 +407,8 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
                 ctx->call_reason = SENSITIVE_ROUTE;
                 risk_response = risk_api_get(ctx, conf);
                 goto handle_response;
+            } else {
+                ctx->pass_reason = PASSED_WITH_COOKIE;
             }
             break;
         case EXPIRED:
@@ -414,6 +426,8 @@ handle_response:
                 request_valid = ctx->score < conf->blocking_score;
                 if (!request_valid) {
                     ctx->block_reason = SERVER;
+                } else {
+                    ctx->pass_reason = PASSED_WITH_S2S;
                 }
             } else {
                 ERROR(ctx->r->server, "px_verify_request: could not complete risk_api request");

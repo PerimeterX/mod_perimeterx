@@ -57,6 +57,24 @@ typedef enum s2s_call_reason_t {
     CAPTCHA_FAILED
 } s2s_call_reason_t;
 
+typedef enum {
+    DIDNT_PASS,
+    PASSED_WITH_COOKIE,
+    PASSED_WITH_S2S,
+    PASSED_WITH_CAPTCHA,
+    PASSED_WITH_TIMEOUT,
+    PASSED_WITH_ERROR
+} pass_reason_t;
+
+static const char *PASS_REASON_STR[] = {
+    "nont",
+    "cookie",
+    "s2s",
+    "captcha",
+    "timeout",
+    "error"
+};
+
 static const char *S2S_CALL_REASON_STR[] = {
     "none",
     "no_cookie",
@@ -122,6 +140,7 @@ typedef struct request_context_t {
     int score;
     block_reason_t block_reason;
     s2s_call_reason_t call_reason;
+    pass_reason_t pass_reason;
     bool block_enabled;
     request_rec *r;
 } request_context;
