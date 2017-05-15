@@ -348,7 +348,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->headers = r->headers_in;
     ctx->block_reason = NO_BLOCKING;
     ctx->call_reason = NONE;
-    ctx->pass_reason = DIDNT_PASS;
+    ctx->pass_reason = DIDNT_PASS; // initial value, should always get changed if request passes
     ctx->block_enabled = enable_block_for_hostname(r, conf->enabled_hostnames);
     ctx->r = r;
 

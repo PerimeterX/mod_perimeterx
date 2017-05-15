@@ -67,7 +67,7 @@ typedef enum {
 } pass_reason_t;
 
 static const char *PASS_REASON_STR[] = {
-    "nont",
+    "none",
     "cookie",
     "s2s",
     "captcha",
