@@ -39,9 +39,9 @@ $ sudo apt-get install libjansson-dev libjson0 libjson0-dev libssl-dev libcurl4-
 ----------------------------------------
 ```shell
 $ git clone https://github.com/PerimeterX/mod_perimeterx.git
-$ cd mod_perimeterx
-$ sudo make
-$ apache2ctl restart
+$ cd mod_perimeterx/src
+$ make
+$ sudo make install
 ```
 
 Make sure that the following line is added to your configuration file: 
@@ -122,7 +122,7 @@ When set to ```On``` the module will be applied on webpage requests.
 
 **required** : No
 
-**default** : Off
+**default** : On
 
 **values** : On | Off
 
@@ -132,7 +132,7 @@ When set to ```On``` the module will be applied on webpage requests.
 
 **required** : No
 
-**default** : Off
+**default** : On
 
 **values** : On | Off
 
@@ -141,9 +141,9 @@ When set to ```On``` the module will be applied on webpage requests.
 
 **required** : No
 
-**default** : 0 (no timeout)
+**default** : 1
 
-**values** : Integer between 0 and 3
+**values** : Integer between 1 and 3
 
 ### <a name="ipheader"></a> `IPHeader` ###
 
@@ -212,7 +212,7 @@ function handleCaptcha(response) {
     var uuid = getQueryString("uuid");
     var name = '_pxCaptcha';
     var expiryUtc = new Date(Date.now() + 1000 * 10).toUTCString();
-    var cookieParts = [name, '=', response + ':' + vid + ':' + uuid, '; expires=', expiryUtc, '; path=/'];
+    var cookieParts = [name, '=', response + ':' + uuid + ':' + vid, '; expires=', expiryUtc, '; path=/'];
     document.cookie = cookieParts.join('');
     var originalURL = getQueryString("url");
     var originalHost = window.location.host;
@@ -261,7 +261,7 @@ function getQueryString(name, url) {
             var uuid = getQueryString("uuid");
             var name = '_pxCaptcha';
             var expiryUtc = new Date(Date.now() + 1000 * 10).toUTCString();
-            var cookieParts = [name, '=', response + ':' + vid + ':' + uuid, '; expires=', expiryUtc, '; path=/'];
+            var cookieParts = [name, '=', response + ':' + uuid + ':' + vid, '; expires=', expiryUtc, '; path=/'];
             document.cookie = cookieParts.join('');
             // after getting resopnse we want to reaload the original page requested
             var originalURL = getQueryString("url");
@@ -314,6 +314,48 @@ function getQueryString(name, url) {
 **values** : string
 
 Determines PerimeterX server base URL.
+
+### <a name="baseurl"></a> `DisableModByEnvvar` ###
+**description** : Disables the PerimeterX module if environment variable `PX_SKIP_MODULE` is set on the request.
+
+**required** : No
+
+**default** : Off
+
+**values** : On|Off
+
+##### Examples
+
+By using `mod_setenvif` you can configure a set of rules to set the `PX_SKIP_MODULE` variable on a request.
+
+* Disable the PerimeterX module on either `gif` or `jpg` file extensions:
+ 
+```
+SetEnvIf Request_URI "\.gif$" PX_SKIP_MODULE true
+SetEnvIf Request_URI "\.jpg$" PX_SKIP_MODULE true
+```
+
+* Disable the PerimeterX module according to the referer:
+
+```
+SetEnvIf Referer www\.mydomain\.example\.com PX_SKIP_MODULE true
+```
+
+* Disable the PerimeterX module on all `HEAD` requests:
+
+```
+SetEnvIf Request_Method HEAD PX_SKIP_MODULE true
+```
+
+* Disable the PerimeterX module based on the user-agent string:
+
+```
+SetEnvIf User-Agent good-bot PX_SKIP_MODULE true
+```
+
+Read more on `mod_setenvif` [here](https://httpd.apache.org/docs/current/mod/mod_setenvif.html).
+ 
+**`mod_env` is not supported with this feature. Though the syntax is similiar to mod_setenvif, the module is different. Mod_env will only run after the PerimeterX module in the Apache fixups phase. You should NOT use the `SetEnv` directive to set the `PX_SKIP_MODULE` variable.**
 
 ### <a name="sensitiveroutes"></a> `SensitiveRoutes`
 

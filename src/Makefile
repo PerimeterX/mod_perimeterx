@@ -1,5 +1,5 @@
 CC = apxs
-CFLAGS = -i -a -Wc,-std=gnu99 -c
+CFLAGS = -Wc,-std=gnu99 -c
 LDFLAGS = `pkg-config --cflags --libs jansson openssl libcurl json-c`
 DBG_CFLAGS = -g -DDEBUG
 
@@ -14,9 +14,11 @@ mod: $(HEADERS) $(SOURCES)
 debug: $(HEADERS) $(SOURCES)
 	$(CC) $(CFLAGS) -DDEBUG $(LDFLAGS) $(SOURCES)
 
-#docker:
+.PHONY: install
+install:
+	$(CC) -i -a mod_perimeterx.la
 
-#test:
-
+.PHONY: clean
 clean:
-	rm -f *.{lo,slo,la,o}
+	@rm -f *.lo *.slo *.la *.o
+	@rm -rf .libs

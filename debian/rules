@@ -1,0 +1,27 @@
+#!/usr/bin/make -f
+
+# DH_VERBOSE = 1
+DEB_BUILDDIR = $(CURDIR)/build
+
+%:
+	dh $@ #--with apache2 --builddirectory=build --sourcedirectory=src
+
+override_dh_auto_configure:
+	mkdir $(DEB_BUILDDIR)
+	cp src/* $(DEB_BUILDDIR)
+	cp README.md $(DEB_BUILDDIR)/README-example.md
+	cd $(DEB_BUILDDIR)
+	# dh_auto_configure
+
+override_dh_auto_build:
+	cd $(DEB_BUILDDIR) && $(MAKE)
+
+override_dh_auto_clean:
+	-rm -rf $(DEB_BUILDDIR)
+	dh_auto_clean
+
+override_dh_auto_install:
+	dh_apache2 --conditional=perimeterx_not_enabled
+	dh_auto_install
+
+override_dh_installexamples:

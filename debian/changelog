@@ -1,0 +1,9 @@
+libapache-mod-perimeterx (2.1.3) jessie; urgency=medium
+
+  * Initial Release.
+
+ -- Eugene Aleynikov <a1j@github>  Tue, 20 Dec 2016 23:06:41 +0000
+
+Local variables:
+mode: debian-changelog
+End:
