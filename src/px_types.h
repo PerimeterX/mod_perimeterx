@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <apr_tables.h>
 #include <http_protocol.h>
+#include <apr_thread_pool.h>
+#include <apr_queue.h>
 
 #include "curl_pool.h"
 
@@ -36,7 +38,17 @@ typedef struct px_config_t {
     apr_array_header_t *sensitive_routes;
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
+    bool background_activity_send;
+    int background_activity_workers;
+    int background_activity_queue_size;
+    apr_queue_t *activity_queue;
+    apr_thread_pool_t *activity_thread_pool;
 } px_config;
+
+typedef struct activity_consumer_data_t {
+    px_config *config;
+    server_rec *server;
+} activity_consumer_data;
 
 typedef enum {
     VALID,

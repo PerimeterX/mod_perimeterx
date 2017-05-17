@@ -22,71 +22,21 @@ static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
-static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
-static const char *EXPECT = "Expect:";
-
 static const char* FILE_EXT_WHITELIST[] = {
     ".css", ".bmp", ".tif", ".ttf", ".docx", ".woff2", ".js", ".pict", ".tiff", ".eot", ".xlsx", ".jpg", ".csv",
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
-    ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar" };
+    ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar"
+};
 
-static char *post_request(const char *url, const char *payload, const char *auth_header, request_context *ctx, curl_pool *curl_pool) {
-    CURL *curl = curl_pool_get_wait(curl_pool);
-
+static char *post_request(const char *url, const char *payload, const request_context *ctx, const px_config *conf) {
+    CURL *curl = curl_pool_get_wait(conf->curl_pool);
     if (curl == NULL) {
         ERROR(ctx->r->server, "post_request: could not obtain curl handle");
         return NULL;
     }
-    struct response_t response;
-    struct curl_slist *headers = NULL;
-    long status_code;
-    CURLcode res;
-    char errbuf[CURL_ERROR_SIZE];
-    errbuf[0] = 0;
-
-    response.data = malloc(1);
-    response.size = 0;
-    response.server = ctx->r->server;
-
-    headers = curl_slist_append(headers, auth_header);
-    headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
-    headers = curl_slist_append(headers, EXPECT);
-
-    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
-
-    res = curl_easy_perform(curl);
-    curl_slist_free_all(headers);
-
-    size_t error_len;
-    switch(res) {
-        case CURLE_OK:
-            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-            if (status_code == HTTP_OK) {
-                curl_pool_put(curl_pool, curl);
-                return response.data;
-            }
-            ERROR(ctx->r->server, "post_request: status: %ld, url: %s", status_code, url);
-            break;
-        case CURLE_OPERATION_TIMEDOUT:
-            ctx->pass_reason = PASSED_WITH_TIMEOUT;
-            break;
-        default:
-            ctx->pass_reason = PASSED_WITH_ERROR;
-            error_len = strlen(errbuf);
-            if (error_len) {
-                ERROR(ctx->r->server, "post_request failed: %s", errbuf);
-            } else {
-                ERROR(ctx->r->server, "post_request failed: %s", curl_easy_strerror(res));
-            }
-    }
-    curl_pool_put(curl_pool, curl);
-    free(response.data);
-    return NULL;
+    char *res = post_request_helper(curl, url, payload, conf, ctx->r->server);
+    curl_pool_put(conf->curl_pool, curl);
+    return res;
 }
 
 void set_call_reason(request_context *ctx, validation_result_t vr) {
@@ -163,7 +113,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
         return true;
     }
 
-    char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, ctx, conf->curl_pool);
+    char *response_str = post_request(conf->captcha_api_url, payload, ctx, conf);
     free(payload);
     if (!response_str) {
         if (ctx->pass_reason == PASSED_WITH_TIMEOUT) {
@@ -189,12 +139,14 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
             ERROR(ctx->r->server, "post_verification: (%s) create activity failed", activity_type);
             return;
         }
-        char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, ctx, conf->curl_pool);
-        free(activity);
-        if (resp) {
-            free(resp);
+        if (conf->background_activity_send) {
+            apr_queue_push(conf->activity_queue, activity);
         } else {
-            ERROR(ctx->r->server, "post_verification: (%s) send failed", activity_type);
+            char *resp = post_request(conf->activities_api_url, activity, ctx, conf);
+            free(activity);
+            if (resp) {
+                free(resp);
+            }
         }
     }
 }
@@ -259,7 +211,7 @@ risk_response* risk_api_get(request_context *ctx, const px_config *conf) {
         return NULL;
     }
     INFO(ctx->r->server, "risk payload: %s", risk_payload);
-    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, conf->auth_header, ctx, conf->curl_pool);
+    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, ctx, conf);
     INFO(ctx->r->server, "risk response: %s", risk_response_str);
     free(risk_payload);
     if (!risk_response_str) {
