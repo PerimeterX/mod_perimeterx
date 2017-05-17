@@ -3,7 +3,6 @@
 
 #include <http_protocol.h>
 #include <apr_pools.h>
-#include <httpd.h>
 
 #include "px_types.h"
 
