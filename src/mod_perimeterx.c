@@ -106,9 +106,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
                     redirect_url = apr_pstrcat(r->pool, conf->block_page_url, "?url=", r->uri, "&uuid=", ctx->uuid, "&vid=", ctx->vid,  NULL);
                 }
                 apr_table_set(r->headers_out, "Location", redirect_url);
-                return HTTP_TEMPORARY_REDIRECT;
-            }
-
+                return HTTP_TEMPORARY_REDIRECT; }
             if (render_page(r, ctx, conf) != 0) {
               ERROR(r->server, "Could not create block page with template, passing request");
             } else {
@@ -123,10 +121,57 @@ int px_handle_request(request_rec *r, px_config *conf) {
     return OK;
 }
 
+static void * APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
+    apr_queue_t *queue = (apr_queue_t *)data;
+    CURL *curl = curl_easy_init();
+    void *v;
+    while (true) {
+        apr_status_t rv = apr_queue_pop(queue, &v);
+        if (rv == APR_EINTR)
+            continue;
+        if (rv == APR_EOF)
+            break;
+        if (rv == APR_SUCCESS && v) {
+            char *activity = (char *)v;
+            // TODO(barak): send activity and release it
+        }
+    }
+    // TODO(barak): release curl
+    return NULL;
+}
+
 // --------------------------------------------------------------------------------
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     curl_global_init(CURL_GLOBAL_ALL);
+    px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
+    if (cfg->background_activity_send) {
+        // TODO(barak): handle errors not just log messages
+        if (cfg->background_activity_workers < 1) {
+            ERROR(s, "invalid number of background activity workers, most be greater than zero");
+            return;
+        }
+        if (cfg->background_activity_queue_size < 1) {
+            ERROR(s, "invalid background activity queue size , most be greater than zero");
+            return;
+        }
+        apr_status_t rv = apr_queue_create(&cfg->activity_queue, cfg->background_activity_queue_size, p);
+        if (rv != APR_SUCCESS) {
+            ERROR(s, "failed to initialize background activity queue");
+            return;
+        }
+        rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, p);
+        if (rv != APR_SUCCESS) {
+            ERROR(s, "failed to initialie background activity thread pool");
+            return;
+        }
+        for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
+            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, cfg->activity_queue, 0, NULL);
+            if (rv != APR_SUCCESS) {
+                ERROR(s, "failed to push backgroun activity consumer");
+            }
+        }
+    }
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
@@ -372,6 +417,33 @@ static const char *set_custom_logo(cmd_parms *cmd, void *config, const char *cus
     return NULL;
 }
 
+static const char *set_background_activity_send(cmd_parms *cmd, void *config, int arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->background_activity_send = arg ? true : false;
+    return NULL;
+}
+
+static const char *set_background_activity_workers(cmd_parms *cmd, void *config, const char *arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->background_activity_workers = atoi(arg);
+    return NULL;
+}
+
+static const char *set_background_activity_queue_size(cmd_parms *cmd, void *config, const char *arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->background_activity_queue_size = atoi(arg);
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -385,7 +457,7 @@ static void *create_config(apr_pool_t *p) {
         conf->send_page_activities = true;
         conf->blocking_score = 70;
         conf->captcha_enabled = true;
-        conf->module_version = "Apache Module v2.1.3";
+        conf->module_version = "Apache Module v2.2.0-RC";
         conf->skip_mod_by_envvar = false;
         conf->curl_pool_size = 40;
         conf->base_url = DEFAULT_BASE_URL;
@@ -406,6 +478,9 @@ static void *create_config(apr_pool_t *p) {
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
+        conf->background_activity_send = true;
+        conf->background_activity_workers = 10;
+        conf->background_activity_queue_size = 1000;
     }
     return conf;
 }
@@ -521,6 +596,21 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable blocking by hostname - list of hostnames on which PX module will be enabled for"),
+    AP_INIT_FLAG("BackgroundActivitySend",
+            set_background_activity_send,
+            NULL,
+            OR_ALL,
+            "Use background workers to send activities"),
+    AP_INIT_TAKE1("BackgroundActivityWorkers",
+            set_background_activity_workers,
+            NULL,
+            OR_ALL,
+            "Number of background workers to send activities"),
+    AP_INIT_TAKE1("BackgroundActivityQueueSize",
+            set_background_activity_queue_size,
+            NULL,
+            OR_ALL,
+            "Queue size for background activity send"),
     { NULL }
 };
 
