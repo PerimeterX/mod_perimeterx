@@ -142,8 +142,6 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
             free(activity);
             if (resp) {
                 free(resp);
-            } else {
-                ERROR(ctx->r->server, "post_verification: (%s) send failed", activity_type);
             }
         }
     }

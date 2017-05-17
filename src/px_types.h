@@ -45,10 +45,10 @@ typedef struct px_config_t {
     apr_thread_pool_t *activity_thread_pool;
 } px_config;
 
-typedef struct thread_data_t {
+typedef struct activity_consumer_data_t {
     px_config *config;
     server_rec *server;
-} thread_data;
+} activity_consumer_data;
 
 typedef enum {
     VALID,

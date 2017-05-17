@@ -126,12 +126,12 @@ int px_handle_request(request_rec *r, px_config *conf) {
 }
 
 static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
-    thread_data *td = (thread_data*)data;
-    px_config *conf = td->config;
+    activity_consumer_data *consumer_data = (activity_consumer_data*)data;
+    px_config *conf = consumer_data->config;
     CURL *curl = curl_easy_init();
     void *v;
     if (!curl ) {
-        ERROR(td->server, "could not create curl handle, thread will not run to consume messages");
+        ERROR(consumer_data->server, "could not create curl handle, thread will not run to consume messages");
         return NULL;
     }
     while (true) {
@@ -142,7 +142,10 @@ static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, voi
             break;
         if (rv == APR_SUCCESS && v) {
             char *activity = (char *)v;
-            post_request_helper(curl, conf->activities_api_url, activity, conf, td->server);
+            char *resp = post_request_helper(curl, conf->activities_api_url, activity, conf, consumer_data->server);
+            if (resp) {
+                free(resp);
+            }
             free(activity);
         }
     }
@@ -173,23 +176,23 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
             ERROR(s, "failed to initialize background activity queue");
             exit(1);
         }
-        thread_data *data = apr_palloc(s->process->pool, sizeof(thread_data));
-        data->server = s;
-        data->config = cfg;
+        activity_consumer_data *consumer_data = apr_palloc(s->process->pool, sizeof(activity_consumer_data));
+        consumer_data->server = s;
+        consumer_data->config = cfg;
         rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, s->process->pool);
         if (rv != APR_SUCCESS) {
             ERROR(s, "failed to initialize background activity thread pool");
             exit(1);
         }
         for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
-            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, data, 0, NULL);
+            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, consumer_data, 0, NULL);
             if (rv != APR_SUCCESS) {
                 ERROR(s, "failed to push background activity consumer");
             }
         }
+        apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_activity_queue);
+        apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_thread_pool);
     }
-    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_activity_queue);
-    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_thread_pool);
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
