@@ -46,7 +46,6 @@ static const char *ACTIVITIES_API = "/api/v1/collector/s2s";
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const int MAX_CURL_POOL_SIZE = 10000;
 
-static server_rec *server;
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
 static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
 static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers, must be greater than zero";
@@ -110,7 +109,8 @@ int px_handle_request(request_rec *r, px_config *conf) {
                     redirect_url = apr_pstrcat(r->pool, conf->block_page_url, "?url=", r->uri, "&uuid=", ctx->uuid, "&vid=", ctx->vid,  NULL);
                 }
                 apr_table_set(r->headers_out, "Location", redirect_url);
-                return HTTP_TEMPORARY_REDIRECT; }
+                return HTTP_TEMPORARY_REDIRECT;
+            }
             if (render_page(r, ctx, conf) != 0) {
               ERROR(r->server, "Could not create block page with template, passing request");
             } else {
@@ -142,8 +142,8 @@ static void * APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, vo
             break;
         if (rv == APR_SUCCESS && v) {
             char *activity = (char *)v;
-            /*INFO(server, "we are working here..");*/
-            post_request_util(curl, conf->activities_api_url, activity, conf, NULL);
+            INFO(NULL, "we are working here..");
+            post_request_helper(curl, conf->activities_api_url, activity, conf, NULL);
             free(activity);
         }
     }
@@ -164,7 +164,6 @@ static apr_status_t terminate_activity_queue(void *q) {
 }
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
-    server = s;
     curl_global_init(CURL_GLOBAL_ALL);
     px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
     if (cfg->background_activity_send) {

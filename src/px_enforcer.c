@@ -36,7 +36,7 @@ static char *post_request(const char *url, const char *payload, const request_co
         return NULL;
     }
 
-    char *res = post_request_util(curl, url, payload, conf, ctx->r->server);
+    char *res = post_request_helper(curl, url, payload, conf, ctx->r->server);
     curl_pool_put(conf->curl_pool, curl);
     return res;
 }

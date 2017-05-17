@@ -13,7 +13,7 @@
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 
-char *post_request_util(CURL* curl, const char *url, const char *payload, const px_config *conf, server_rec *server) {
+char *post_request_helper(CURL* curl, const char *url, const char *payload, const px_config *conf, server_rec *server) {
     struct response_t response;
     struct curl_slist *headers = NULL;
     long status_code;
