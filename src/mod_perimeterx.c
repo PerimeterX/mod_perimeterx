@@ -19,6 +19,7 @@
 #include "apr_strings.h"
 #include "apr_escape.h"
 
+#include "px_utils.h"
 #include "px_types.h"
 #include "px_template.h"
 #include "px_enforcer.h"
@@ -45,8 +46,11 @@ static const char *ACTIVITIES_API = "/api/v1/collector/s2s";
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const int MAX_CURL_POOL_SIZE = 10000;
 
+static server_rec *server;
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
 static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
+static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers, must be greater than zero";
+static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size , must be greater than zero";
 
 static const char *block_tpl = "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"utf-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> <title>Access to this page has been denied.</title> <link href=\"https://fonts.googleapis.com/css?family=Open+Sans:300\" rel=\"stylesheet\"> <style> html,body{ margin: 0; padding: 0; font-family: 'Open Sans', sans-serif; color: #000; } a{ color: #c5c5c5; text-decoration: none; } .container{ align-items: center; display: flex; flex: 1; justify-content: space-between; flex-direction: column; height: 100%; } .container > div { width: 100%; display: flex; justify-content:center; } .container > div > div { display: flex; width: 80%; } .customer-logo-wrapper{ padding-top: 2rem; flex-grow: 0; background-color: #fff; visibility: {{logoVisibility}}; } .customer-logo{ border-bottom: 1px solid #000; } .customer-logo > img{ padding-bottom: 1rem; max-height: 50px; max-width: auto; } .page-title-wrapper{ flex-grow: 2; } .page-title { flex-direction: column-reverse; } .content-wrapper{ flex-grow: 5; } .content{ flex-direction: column; } .page-footer-wrapper{ align-items: center; flex-grow: 0.2; background-color: #000; color: #c5c5c5; font-size: 70%; } @media (min-width:768px){ html,body{ height: 100%; } } </style> <!-- Custom CSS --> {{# cssRef }} <link rel=\"stylesheet\" type=\"text/css\" href=\"{{cssRef}}\" /> {{/ cssRef }} </head> <body> <section class=\"container\"> <div class=\"customer-logo-wrapper\"> <div class=\"customer-logo\"> <img src=\"{{customLogo}}\" alt=\"Logo\"/> </div> </div> <div class=\"page-title-wrapper\"> <div class=\"page-title\"> <h1>Access to this page has been denied.</h1> </div> </div> <div class=\"content-wrapper\"> <div class=\"content\"> <p> You have been blocked because we believe you are using automation tools to browse the website. </p> <p> Please note that Javascript and Cookies must be enabled on your browser to access the website. </p> <p> If you think you have been blocked by mistake, please contact the website administrator with the reference ID below. </p> <p> Reference ID: #{{refId}} </p> </div> </div> <div class=\"page-footer-wrapper\"> <div class=\"page-footer\"> <p> Powered by <a href=\"https://www.perimeterx.com\">PerimeterX</a> , Inc. </p> </div> </div> </section> <!-- Px --> <script> ( function (){ window._pxAppId = '{{appId}}'; var p = document.getElementsByTagName(\"script\")[0], s = document.createElement(\"script\"); s.async = 1; s.src = '//client.perimeterx.net/{{appId}}/main.min.js'; p.parentNode.insertBefore(s, p); } () ); </script> <!-- Custom Script --> {{# jsRef }} <script src=\"{{jsRef}}\"></script> {{/ jsRef }} </body> </html> ";
 
@@ -122,9 +126,14 @@ int px_handle_request(request_rec *r, px_config *conf) {
 }
 
 static void * APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
-    apr_queue_t *queue = (apr_queue_t *)data;
+    px_config *conf = (px_config*)data;
+    apr_queue_t *queue = conf->activity_queue;
     CURL *curl = curl_easy_init();
     void *v;
+    if (!curl ) {
+        // TODO: log error here
+        return NULL;
+    }
     while (true) {
         apr_status_t rv = apr_queue_pop(queue, &v);
         if (rv == APR_EINTR)
@@ -133,45 +142,51 @@ static void * APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, vo
             break;
         if (rv == APR_SUCCESS && v) {
             char *activity = (char *)v;
-            // TODO(barak): send activity and release it
+            /*INFO(server, "we are working here..");*/
+            post_request_util(curl, conf->activities_api_url, activity, conf, NULL);
+            free(activity);
         }
     }
-    // TODO(barak): release curl
+    curl_easy_cleanup(curl);
     return NULL;
 }
 
 // --------------------------------------------------------------------------------
+//
+static apr_status_t destroy_thread_pool(void *t) {
+    apr_thread_pool_destroy(t);
+    return APR_SUCCESS;
+}
+
+static apr_status_t terminate_activity_queue(void *q) {
+    apr_queue_term(q);
+    return APR_SUCCESS;
+}
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
+    server = s;
     curl_global_init(CURL_GLOBAL_ALL);
     px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
     if (cfg->background_activity_send) {
-        // TODO(barak): handle errors not just log messages
-        if (cfg->background_activity_workers < 1) {
-            ERROR(s, "invalid number of background activity workers, most be greater than zero");
-            return;
-        }
-        if (cfg->background_activity_queue_size < 1) {
-            ERROR(s, "invalid background activity queue size , most be greater than zero");
-            return;
-        }
         apr_status_t rv = apr_queue_create(&cfg->activity_queue, cfg->background_activity_queue_size, p);
         if (rv != APR_SUCCESS) {
             ERROR(s, "failed to initialize background activity queue");
-            return;
+            exit(1);
         }
         rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, p);
         if (rv != APR_SUCCESS) {
-            ERROR(s, "failed to initialie background activity thread pool");
-            return;
+            ERROR(s, "failed to initialize background activity thread pool");
+            exit(1);
         }
         for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
-            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, cfg->activity_queue, 0, NULL);
+            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, cfg, 0, NULL);
             if (rv != APR_SUCCESS) {
-                ERROR(s, "failed to push backgroun activity consumer");
+                ERROR(s, "failed to push background activity consumer");
             }
         }
     }
+    apr_pool_cleanup_register(p, cfg->activity_thread_pool, apr_pool_cleanup_null, destroy_thread_pool);
+    apr_pool_cleanup_register(p, cfg->activity_queue,terminate_activity_queue, apr_pool_cleanup_null);
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
@@ -431,7 +446,11 @@ static const char *set_background_activity_workers(cmd_parms *cmd, void *config,
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    conf->background_activity_workers = atoi(arg);
+    int worker_number = atoi(arg);
+    if (worker_number < 1) {
+        return INVALID_WORKER_NUMBER_QUEUE_SIZE;
+    }
+    conf->background_activity_workers = worker_number;
     return NULL;
 }
 
@@ -440,7 +459,11 @@ static const char *set_background_activity_queue_size(cmd_parms *cmd, void *conf
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    conf->background_activity_queue_size = atoi(arg);
+    int queue_size = atoi(arg);
+    if (queue_size < 1) {
+        return INVALID_ACTIVITY_QUEUE_SIZE;
+    }
+    conf->background_activity_queue_size = queue_size;
     return NULL;
 }
 

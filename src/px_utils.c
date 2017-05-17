@@ -10,6 +10,53 @@
 #define ERROR(server_rec, ...) \
     ap_log_error(APLOG_MARK, APLOG_ERR, 0, server_rec, "[mod_perimeterx]:" __VA_ARGS__)
 
+static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
+static const char *EXPECT = "Expect:";
+
+char *post_request_util(CURL* curl, const char *url, const char *payload, const px_config *conf, server_rec *server) {
+    struct response_t response;
+    struct curl_slist *headers = NULL;
+    long status_code;
+    CURLcode res;
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+
+    response.data = malloc(1);
+    response.size = 0;
+    response.server = server;
+
+    headers = curl_slist_append(headers, conf->auth_header);
+    headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
+    headers = curl_slist_append(headers, EXPECT);
+
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, conf->api_timeout);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
+    res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    if (res == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+        if (status_code == HTTP_OK) {
+            return response.data;
+        }
+        ERROR(server, "post_request: status: %ld, url: %s", status_code, url);
+    }
+    else {
+        size_t len = strlen(errbuf);
+        if (len) {
+            ERROR(server, "post_request failed: %s", errbuf);
+        } else {
+            ERROR(server, "post_request failed: %s", curl_easy_strerror(res));
+        }
+    }
+    free(response.data);
+    return NULL;
+}
+
 size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream) {
     struct response_t *res = (struct response_t*)stream;
     size_t realsize = size * nmemb;
