@@ -153,11 +153,12 @@ static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, voi
 // --------------------------------------------------------------------------------
 //
 static apr_status_t destroy_thread_pool(void *t) {
-    apr_thread_pool_destroy(t);
+    apr_thread_pool_t *thread_pool = (apr_thread_pool_t*)t;
+    apr_thread_pool_destroy(thread_pool);
     return APR_SUCCESS;
 }
 
-static apr_status_t terminate_activity_queue(void *q) {
+static apr_status_t destroy_activity_queue(void *q) {
     apr_queue_t *queue = (apr_queue_t*)q;
     apr_queue_term(queue);
     return APR_SUCCESS;
@@ -187,8 +188,8 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
             }
         }
     }
-    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, terminate_activity_queue);
-    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, apr_pool_cleanup_null);
+    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_activity_queue);
+    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_thread_pool);
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
