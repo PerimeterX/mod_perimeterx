@@ -125,25 +125,24 @@ int px_handle_request(request_rec *r, px_config *conf) {
     return OK;
 }
 
-static void * APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
-    px_config *conf = (px_config*)data;
-    apr_queue_t *queue = conf->activity_queue;
+static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
+    thread_data *td = (thread_data*)data;
+    px_config *conf = td->config;
     CURL *curl = curl_easy_init();
     void *v;
     if (!curl ) {
-        // TODO: log error here
+        ERROR(td->server, "could not create curl handle, thread will not run to consume messages");
         return NULL;
     }
     while (true) {
-        apr_status_t rv = apr_queue_pop(queue, &v);
+        apr_status_t rv = apr_queue_pop(conf->activity_queue, &v);
         if (rv == APR_EINTR)
             continue;
         if (rv == APR_EOF)
             break;
         if (rv == APR_SUCCESS && v) {
             char *activity = (char *)v;
-            INFO(NULL, "we are working here..");
-            post_request_helper(curl, conf->activities_api_url, activity, conf, NULL);
+            post_request_helper(curl, conf->activities_api_url, activity, conf, td->server);
             free(activity);
         }
     }
@@ -159,7 +158,8 @@ static apr_status_t destroy_thread_pool(void *t) {
 }
 
 static apr_status_t terminate_activity_queue(void *q) {
-    apr_queue_term(q);
+    apr_queue_t *queue = (apr_queue_t*)q;
+    apr_queue_term(queue);
     return APR_SUCCESS;
 }
 
@@ -167,25 +167,28 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     curl_global_init(CURL_GLOBAL_ALL);
     px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
     if (cfg->background_activity_send) {
-        apr_status_t rv = apr_queue_create(&cfg->activity_queue, cfg->background_activity_queue_size, p);
+        apr_status_t rv = apr_queue_create(&cfg->activity_queue, cfg->background_activity_queue_size, s->process->pool);
         if (rv != APR_SUCCESS) {
             ERROR(s, "failed to initialize background activity queue");
             exit(1);
         }
-        rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, p);
+        thread_data *data = apr_palloc(s->process->pool, sizeof(thread_data));
+        data->server = s;
+        data->config = cfg;
+        rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, s->process->pool);
         if (rv != APR_SUCCESS) {
             ERROR(s, "failed to initialize background activity thread pool");
             exit(1);
         }
         for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
-            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, cfg, 0, NULL);
+            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, data, 0, NULL);
             if (rv != APR_SUCCESS) {
                 ERROR(s, "failed to push background activity consumer");
             }
         }
     }
-    apr_pool_cleanup_register(p, cfg->activity_thread_pool, apr_pool_cleanup_null, destroy_thread_pool);
-    apr_pool_cleanup_register(p, cfg->activity_queue,terminate_activity_queue, apr_pool_cleanup_null);
+    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, terminate_activity_queue);
+    apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, apr_pool_cleanup_null);
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {

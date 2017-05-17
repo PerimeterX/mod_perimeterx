@@ -45,6 +45,11 @@ typedef struct px_config_t {
     apr_thread_pool_t *activity_thread_pool;
 } px_config;
 
+typedef struct thread_data_t {
+    px_config *config;
+    server_rec *server;
+} thread_data;
+
 typedef enum {
     VALID,
     NO_SIGNING,
