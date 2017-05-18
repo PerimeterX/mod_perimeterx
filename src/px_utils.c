@@ -13,7 +13,7 @@
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 
-char *post_request_helper(CURL* curl, const char *url, const char *payload, const px_config *conf, server_rec *server, CURLcode *status) {
+CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, const px_config *conf, server_rec *server, char **response_data) {
     struct response_t response;
     struct curl_slist *headers = NULL;
     long status_code;
@@ -35,25 +35,31 @@ char *post_request_helper(CURL* curl, const char *url, const char *payload, cons
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, conf->api_timeout);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
-    *status = curl_easy_perform(curl);
+    CURLcode status = curl_easy_perform(curl);
     curl_slist_free_all(headers);
-    if (*status == CURLE_OK) {
+    if (status == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {
-            return response.data;
+            if (response_data != NULL) {
+                *response_data = response.data;
+            } else {
+                free(response.data);
+            }
+            return status;
         }
         ERROR(server, "post_request: status: %ld, url: %s", status_code, url);
-    }
-    else {
+        status = CURLE_HTTP_RETURNED_ERROR;
+    } else {
         size_t len = strlen(errbuf);
         if (len) {
             ERROR(server, "post_request failed: %s", errbuf);
         } else {
-            ERROR(server, "post_request failed: %s", curl_easy_strerror(*status));
+            ERROR(server, "post_request failed: %s", curl_easy_strerror(status));
         }
     }
     free(response.data);
-    return NULL;
+    *response_data = NULL;
+    return status;
 }
 
 size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream) {

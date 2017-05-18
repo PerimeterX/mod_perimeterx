@@ -28,33 +28,35 @@ static const char* FILE_EXT_WHITELIST[] = {
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar"
 };
 
-static char *post_request(const char *url, const char *payload, const request_context *ctx, const px_config *conf, CURLcode *status) {
+static CURLcode post_request(const char *url, const char *payload, const request_context *ctx, const px_config *conf, char **response_data) {
     CURL *curl = curl_pool_get_wait(conf->curl_pool);
     if (curl == NULL) {
         ERROR(ctx->r->server, "post_request: could not obtain curl handle");
-        return NULL;
+        return CURLE_FAILED_INIT;
     }
-    char *resp = post_request_helper(curl, url, payload, conf, ctx->r->server, status);
+
+    CURLcode status = post_request_helper(curl, url, payload, conf, ctx->r->server, response_data);
     curl_pool_put(conf->curl_pool, curl);
-    return resp;
+    return status;
 }
 
 void set_call_reason(request_context *ctx, validation_result_t vr) {
     switch (vr) {
-        case NULL_COOKIE:
-            ctx->call_reason = NO_COOKIE;
+        case VALIDATION_RESULT_NULL_COOKIE:
+            ctx->call_reason = CALL_REASON_NONE;
             break;
-        case EXPIRED:
-            ctx->call_reason = EXPIRED_COOKIE;
+        case VALIDATION_RESULT_EXPIRED:
+            ctx->call_reason = CALL_REASON_EXPIRED_COOKIE;
             break;
-        case DECRYPTION_FAILED:
-            ctx->call_reason = COOKIE_DECRYPTION_FAILED;
+        case VALIDATION_RESULT_DECRYPTION_FAILED:
+            ctx->call_reason = CALL_REASON_COOKIE_DECRYPTION_FAILED;
             break;
-        case INVALID:
-            ctx->call_reason = COOKIE_VALIDATION_FAILED;
+        case VALIDATION_RESULT_INVALID:
+            ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
             break;
         default:
-            ctx->call_reason = COOKIE_VALIDATION_FAILED;
+            ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
+            break;
     }
 }
 
@@ -109,16 +111,16 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     INFO(ctx->r->server, "verify_captcha: request - (%s)", payload);
     if (!payload) {
         INFO(ctx->r->server, "verify_captcha: failed to format captcha payload. url: (%s)", ctx->full_url);
-        ctx->pass_reason = PASSED_WITH_ERROR;
+        ctx->pass_reason = PASS_REASON_ERROR;
         return true;
     }
 
-    CURLcode status;
-    char *response_str = post_request(conf->captcha_api_url, payload, ctx, conf, &status);
+    char *response_str = NULL;
+    CURLcode status = post_request(conf->captcha_api_url, payload, ctx, conf, &response_str);
     free(payload);
     if (!response_str) {
         if (status == CURLE_OPERATION_TIMEDOUT) {
-            ctx->pass_reason = PASSED_WITH_CAPTCHA_TIMEOUT;
+            ctx->pass_reason = PASS_REASON_CAPTCHA_TIMEOUT;
         }
         INFO(ctx->r->server, "verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->full_url);
         return false; // in case we are getting non 200 response
@@ -128,7 +130,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     captcha_response *c = parse_captcha_response(response_str, ctx);
     free(response_str);
     bool passed = (c && c->status == 0);
-    if (passed) ctx->pass_reason = PASSED_WITH_CAPTCHA;
+    if (passed) ctx->pass_reason = PASS_REASON_CAPTCHA;
     return passed;
 }
 
@@ -143,12 +145,8 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
         if (conf->background_activity_send) {
             apr_queue_push(conf->activity_queue, activity);
         } else {
-            CURLcode status;
-            char *resp = post_request(conf->activities_api_url, activity, ctx, conf, &status);
+            post_request(conf->activities_api_url, activity, ctx, conf, NULL);
             free(activity);
-            if (resp) {
-                free(resp);
-            }
         }
     }
 }
@@ -210,17 +208,17 @@ bool px_should_verify_request(request_rec *r, px_config *conf) {
 risk_response* risk_api_get(request_context *ctx, const px_config *conf) {
     char *risk_payload = create_risk_payload(ctx, conf);
     if (!risk_payload) {
-        ctx->pass_reason = PASSED_WITH_ERROR;
+        ctx->pass_reason = PASS_REASON_ERROR;
         return NULL;
     }
-    CURLcode status;
     INFO(ctx->r->server, "risk payload: %s", risk_payload);
-    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, ctx, conf, &status);
-    INFO(ctx->r->server, "risk response: %s", risk_response_str);
+    char *risk_response_str;
+    CURLcode status = post_request(conf->risk_api_url , risk_payload, ctx, conf, &risk_response_str);
     free(risk_payload);
     if (!risk_response_str) {
+        INFO(ctx->r->server, "no risk response, status %d", status);
         if (status == CURLE_OPERATION_TIMEDOUT) {
-            ctx->pass_reason = PASSED_WITH_S2S_TIMEOUT;
+            ctx->pass_reason = PASS_REASON_S2S_TIMEOUT;
         }
         return NULL;
     }
@@ -309,9 +307,9 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 
     ctx->http_version = version;
     ctx->headers = r->headers_in;
-    ctx->block_reason = NO_BLOCKING;
-    ctx->call_reason = NONE;
-    ctx->pass_reason = DIDNT_PASS; // initial value, should always get changed if request passes
+    ctx->block_reason = BLOCK_REASON_NONE;
+    ctx->call_reason = CALL_REASON_NONE;
+    ctx->pass_reason = PASS_REASON_NONE; // initial value, should always get changed if request passes
     ctx->block_enabled = enable_block_for_hostname(r, conf->enabled_hostnames);
     ctx->r = r;
 
@@ -340,7 +338,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             // pxCaptcha is not valid: removing captcha cookie data
             ctx->uuid = NULL;
             ctx->vid = NULL;
-            ctx->call_reason = CAPTCHA_FAILED;
+            ctx->call_reason = CALL_REASON_CAPTCHA_FAILED;
             risk_response = risk_api_get(ctx, conf);
             goto handle_response;
         }
@@ -348,7 +346,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
 
     validation_result_t vr;
     if (ctx->px_cookie == NULL) {
-        vr = NULL_COOKIE;
+        vr = VALIDATION_RESULT_NULL_COOKIE;
     } else {
         risk_cookie *c = decode_cookie(ctx->px_cookie, conf->cookie_key, ctx);
         if (c) {
@@ -358,26 +356,26 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             vr = validate_cookie(c, ctx, conf->cookie_key);
         } else {
             ctx->px_cookie_orig = ctx->px_cookie;
-            vr = DECRYPTION_FAILED;
+            vr = VALIDATION_RESULT_DECRYPTION_FAILED;
         }
     }
     switch (vr) {
-        case VALID:
+        case VALIDATION_RESULT_VALID:
             request_valid = ctx->score < conf->blocking_score;
             if (!request_valid) {
-                ctx->block_reason = COOKIE;
+                ctx->block_reason = BLOCK_REASON_COOKIE;
             } else if (is_sensitive_route_prefix(ctx->r, conf ) || is_sensitive_route(ctx->r, conf)) {
-                ctx->call_reason = SENSITIVE_ROUTE;
+                ctx->call_reason = CALL_REASON_SENSITIVE_ROUTE;
                 risk_response = risk_api_get(ctx, conf);
                 goto handle_response;
             } else {
-                ctx->pass_reason = PASSED_WITH_COOKIE;
+                ctx->pass_reason = PASS_REASON_COOKIE;
             }
             break;
-        case EXPIRED:
-        case DECRYPTION_FAILED:
-        case NULL_COOKIE:
-        case INVALID:
+        case VALIDATION_RESULT_EXPIRED:
+        case VALIDATION_RESULT_DECRYPTION_FAILED:
+        case VALIDATION_RESULT_NULL_COOKIE:
+        case VALIDATION_RESULT_INVALID:
             set_call_reason(ctx, vr);
             risk_response = risk_api_get(ctx, conf);
 handle_response:
@@ -388,9 +386,9 @@ handle_response:
                 }
                 request_valid = ctx->score < conf->blocking_score;
                 if (!request_valid) {
-                    ctx->block_reason = SERVER;
+                    ctx->block_reason = BLOCK_REASON_SERVER;
                 } else {
-                    ctx->pass_reason = PASSED_WITH_S2S;
+                    ctx->pass_reason = PASS_REASON_S2S;
                 }
             } else {
                 ERROR(ctx->r->server, "px_verify_request: could not complete risk_api request");

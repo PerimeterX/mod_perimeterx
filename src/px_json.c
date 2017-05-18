@@ -14,6 +14,33 @@
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
+static const char *PASS_REASON_STR[] = {
+    [PASS_REASON_NONE] = "none",
+    [PASS_REASON_COOKIE] = "cookie",
+    [PASS_REASON_TIMEOUT] = "timeout",
+    [PASS_REASON_S2S] = "s2s",
+    [PASS_REASON_S2S_TIMEOUT] = "s2s_timeout",
+    [PASS_REASON_CAPTCHA] = "captcha",
+    [PASS_REASON_CAPTCHA_TIMEOUT] = "captcha_timeout",
+    [PASS_REASON_ERROR] = "error",
+};
+
+static const char *CALL_REASON_STR[] = {
+    [CALL_REASON_NONE] = "none",
+    [CALL_REASON_NO_COOKIE] = "no_cookie",
+    [CALL_REASON_EXPIRED_COOKIE] = "cookie_expired",
+    [CALL_REASON_COOKIE_DECRYPTION_FAILED] = "cookie_decryption_failed",
+    [CALL_REASON_COOKIE_VALIDATION_FAILED] = "cookie_validation_failed",
+    [CALL_REASON_SENSITIVE_ROUTE] = "sensitive_route",
+    [CALL_REASON_CAPTCHA_FAILED] = "captcha_failed",
+};
+
+static const char *BLOCK_REASON_STR[] = {
+    [BLOCK_REASON_NONE] = "none",
+    [BLOCK_REASON_COOKIE] = "cookie_high_score",
+    [BLOCK_REASON_SERVER] = "s2s_high_score",
+};
+
 // format json requests
 //
 
@@ -96,7 +123,7 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
 
     // additional object
     json_t *j_additional = json_pack("{s:s, s:s, s:s, s:s}",
-            "s2s_call_reason", S2S_CALL_REASON_STR[ctx->call_reason],
+            "s2s_call_reason", CALL_REASON_STR[ctx->call_reason],
             "http_method", ctx->http_method,
             "http_version", ctx->http_version,
             "module_version", conf->module_version);

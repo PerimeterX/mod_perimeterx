@@ -51,67 +51,40 @@ typedef struct activity_consumer_data_t {
 } activity_consumer_data;
 
 typedef enum {
-    VALID,
-    NO_SIGNING,
-    EXPIRED,
-    INVALID,
-    DECRYPTION_FAILED,
-    NULL_COOKIE
+    VALIDATION_RESULT_VALID,
+    VALIDATION_RESULT_NO_SIGNING,
+    VALIDATION_RESULT_EXPIRED,
+    VALIDATION_RESULT_INVALID,
+    VALIDATION_RESULT_DECRYPTION_FAILED,
+    VALIDATION_RESULT_NULL_COOKIE
 } validation_result_t;
 
-typedef enum s2s_call_reason_t {
-    NONE,
-    NO_COOKIE,
-    EXPIRED_COOKIE,
-    COOKIE_DECRYPTION_FAILED,
-    COOKIE_VALIDATION_FAILED,
-    SENSITIVE_ROUTE,
-    CAPTCHA_FAILED
-} s2s_call_reason_t;
+typedef enum call_reason_t {
+    CALL_REASON_NONE,
+    CALL_REASON_NO_COOKIE,
+    CALL_REASON_EXPIRED_COOKIE,
+    CALL_REASON_COOKIE_DECRYPTION_FAILED,
+    CALL_REASON_COOKIE_VALIDATION_FAILED,
+    CALL_REASON_SENSITIVE_ROUTE,
+    CALL_REASON_CAPTCHA_FAILED,
+} call_reason_t;
 
 typedef enum {
-    DIDNT_PASS,
-    PASSED_WITH_COOKIE,
-    PASSED_WITH_TIMEOUT,
-    PASSED_WITH_S2S,
-    PASSED_WITH_S2S_TIMEOUT,
-    PASSED_WITH_CAPTCHA,
-    PASSED_WITH_CAPTCHA_TIMEOUT,
-    PASSED_WITH_ERROR
+    PASS_REASON_NONE,
+    PASS_REASON_COOKIE,
+    PASS_REASON_TIMEOUT,
+    PASS_REASON_S2S,
+    PASS_REASON_S2S_TIMEOUT,
+    PASS_REASON_CAPTCHA,
+    PASS_REASON_CAPTCHA_TIMEOUT,
+    PASS_REASON_ERROR,
 } pass_reason_t;
 
-static const char *PASS_REASON_STR[] = {
-    "none",
-    "cookie",
-    "timeout",
-    "s2s",
-    "s2s_timeout",
-    "captcha",
-    "captcha_timeout",
-    "error"
-};
-
-static const char *S2S_CALL_REASON_STR[] = {
-    "none",
-    "no_cookie",
-    "cookie_expired",
-    "cookie_decryption_failed",
-    "cookie_validation_failed",
-    "sensitive_route",
-    "captcha_failed"
-};
-
 typedef enum {
-    NO_BLOCKING,
-    COOKIE,
-    SERVER
+    BLOCK_REASON_NONE,
+    BLOCK_REASON_COOKIE,
+    BLOCK_REASON_SERVER,
 } block_reason_t;
-
-static const char *BLOCK_REASON_STR[] = {
-    "none",
-    "cookie_high_score",
-    "s2s_high_score"
-};
 
 typedef struct risk_cookie_t {
     const char *timestamp;
@@ -156,7 +129,7 @@ typedef struct request_context_t {
     const char *px_cookie_orig;
     int score;
     block_reason_t block_reason;
-    s2s_call_reason_t call_reason;
+    call_reason_t call_reason;
     pass_reason_t pass_reason;
     bool block_enabled;
     request_rec *r;
