@@ -208,13 +208,15 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     }
 
     int status = -1;
+    int score = 0;
     const char *uuid = NULL;
-    int non_human = 0;
-    if (json_unpack(j_response, "{s:i,s:s,s:{s:i}}",
+    const char *action = NULL;
+    if (json_unpack(j_response, "{s:i,s:s,s:i,s:s}",
                 "status", &status,
                 "uuid", &uuid,
-                "scores",
-                "non_human", &non_human)) {
+                "score", &score,
+                "action", &action
+                )) {
         ERROR(ctx->r->server, "parse_risk_response: failed to unpack risk response. (%s)", risk_response_str);
         json_decref(j_response);
         return NULL;
@@ -224,7 +226,8 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     if (parsed_response) {
         parsed_response->uuid = apr_pstrdup(ctx->r->pool, uuid);
         parsed_response->status = status;
-        parsed_response->score = non_human;
+        parsed_response->score = score;
+        parsed_response->action = action;
     }
     json_decref(j_response);
     return parsed_response;

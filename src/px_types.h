@@ -126,9 +126,10 @@ typedef struct risk_cookie_t {
 } risk_cookie;
 
 typedef struct risk_response_t {
-    const char* uuid;
+    const char *uuid;
     int status;
     int score;
+    const char *action;
 } risk_response;
 
 typedef struct captcha_response_t {
