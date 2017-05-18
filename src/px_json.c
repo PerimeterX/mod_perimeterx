@@ -33,6 +33,8 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         if (ctx->px_cookie) {
             json_object_set_new(details, "px_cookie", json_string(ctx->px_cookie_decrypted));
         }
+        const char *pass_reason_str = PASS_REASON_STR[ctx->pass_reason];
+        json_object_set_new(details, "pass_reason", json_string(pass_reason_str));
     }
 
     // Extract all headers and jsonfy it

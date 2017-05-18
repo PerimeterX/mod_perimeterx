@@ -141,8 +141,9 @@ static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, voi
         if (rv == APR_EOF)
             break;
         if (rv == APR_SUCCESS && v) {
+            CURLcode status;
             char *activity = (char *)v;
-            char *resp = post_request_helper(curl, conf->activities_api_url, activity, conf, consumer_data->server);
+            char *resp = post_request_helper(curl, conf->activities_api_url, activity, conf, consumer_data->server, &status);
             if (resp) {
                 free(resp);
             }
