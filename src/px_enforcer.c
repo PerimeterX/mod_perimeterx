@@ -28,15 +28,15 @@ static const char* FILE_EXT_WHITELIST[] = {
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar"
 };
 
-static char *post_request(const char *url, const char *payload, const request_context *ctx, const px_config *conf) {
+static char *post_request(const char *url, const char *payload, const request_context *ctx, const px_config *conf, CURLcode *status) {
     CURL *curl = curl_pool_get_wait(conf->curl_pool);
     if (curl == NULL) {
         ERROR(ctx->r->server, "post_request: could not obtain curl handle");
         return NULL;
     }
-    char *res = post_request_helper(curl, url, payload, conf, ctx->r->server);
+    char *resp = post_request_helper(curl, url, payload, conf, ctx->r->server, status);
     curl_pool_put(conf->curl_pool, curl);
-    return res;
+    return resp;
 }
 
 void set_call_reason(request_context *ctx, validation_result_t vr) {
@@ -113,10 +113,11 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
         return true;
     }
 
-    char *response_str = post_request(conf->captcha_api_url, payload, ctx, conf);
+    CURLcode status;
+    char *response_str = post_request(conf->captcha_api_url, payload, ctx, conf, &status);
     free(payload);
     if (!response_str) {
-        if (ctx->pass_reason == PASSED_WITH_TIMEOUT) {
+        if (status == CURLE_OPERATION_TIMEDOUT) {
             ctx->pass_reason = PASSED_WITH_CAPTCHA_TIMEOUT;
         }
         INFO(ctx->r->server, "verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->full_url);
@@ -142,7 +143,8 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
         if (conf->background_activity_send) {
             apr_queue_push(conf->activity_queue, activity);
         } else {
-            char *resp = post_request(conf->activities_api_url, activity, ctx, conf);
+            CURLcode status;
+            char *resp = post_request(conf->activities_api_url, activity, ctx, conf, &status);
             free(activity);
             if (resp) {
                 free(resp);
@@ -208,14 +210,16 @@ bool px_should_verify_request(request_rec *r, px_config *conf) {
 risk_response* risk_api_get(request_context *ctx, const px_config *conf) {
     char *risk_payload = create_risk_payload(ctx, conf);
     if (!risk_payload) {
+        ctx->pass_reason = PASSED_WITH_ERROR;
         return NULL;
     }
+    CURLcode status;
     INFO(ctx->r->server, "risk payload: %s", risk_payload);
-    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, ctx, conf);
+    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, ctx, conf, &status);
     INFO(ctx->r->server, "risk response: %s", risk_response_str);
     free(risk_payload);
     if (!risk_response_str) {
-        if (ctx->pass_reason == PASSED_WITH_TIMEOUT) {
+        if (status == CURLE_OPERATION_TIMEDOUT) {
             ctx->pass_reason = PASSED_WITH_S2S_TIMEOUT;
         }
         return NULL;
