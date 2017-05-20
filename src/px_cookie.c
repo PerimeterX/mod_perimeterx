@@ -206,12 +206,12 @@ risk_cookie *decode_cookie(const char *px_cookie, const char *cookie_key, reques
 validation_result_t validate_cookie(const risk_cookie *cookie, request_context *ctx, const char *cookie_key) {
     if (cookie == NULL) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: no _px cookie", ctx->app_id);
-        return NULL_COOKIE;
+        return VALIDATION_RESULT_NULL_COOKIE;
     }
 
     if (cookie->hash == NULL || strlen(cookie->hash) == 0) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: no hash", ctx->app_id);
-        return NO_SIGNING;
+        return VALIDATION_RESULT_NO_SIGNING;
     }
 
     struct timeval te;
@@ -219,7 +219,7 @@ validation_result_t validate_cookie(const risk_cookie *cookie, request_context *
     long long currenttime = te.tv_sec * 1000LL + te.tv_usec / 1000;
     if (currenttime > cookie->ts) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: cookie expired", ctx->app_id);
-        return EXPIRED;
+        return VALIDATION_RESULT_EXPIRED;
     }
 
     char signature[HASH_LEN];
@@ -228,9 +228,9 @@ validation_result_t validate_cookie(const risk_cookie *cookie, request_context *
 
     if (memcmp(signature, cookie->hash, 64) != 0) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: invalid signature", ctx->app_id);
-        return INVALID;
+        return VALIDATION_RESULT_INVALID;
     }
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: valid", ctx->app_id);
-    return VALID;
+    return VALIDATION_RESULT_VALID;
 }

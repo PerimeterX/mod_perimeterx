@@ -16,88 +16,42 @@ static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
-static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
-static const char *EXPECT = "Expect:";
-
 static const char* FILE_EXT_WHITELIST[] = {
     ".css", ".bmp", ".tif", ".ttf", ".docx", ".woff2", ".js", ".pict", ".tiff", ".eot", ".xlsx", ".jpg", ".csv",
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
-    ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar" };
+    ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar"
+};
 
-static char *post_request(const char *url, const char *payload, const char *auth_header, request_context *ctx, curl_pool *curl_pool) {
-    CURL *curl = curl_pool_get_wait(curl_pool);
-
+static CURLcode post_request(const char *url, const char *payload, const request_context *ctx, const px_config *conf, char **response_data) {
+    CURL *curl = curl_pool_get_wait(conf->curl_pool);
     if (curl == NULL) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server,
                 "[%s]: post_req_request: could not obtain curl handle", ctx->app_id);
-        return NULL;
+        return CURLE_FAILED_INIT;
     }
-    struct response_t response;
-    struct curl_slist *headers = NULL;
-    long status_code;
-    CURLcode res;
-    char errbuf[CURL_ERROR_SIZE];
-    errbuf[0] = 0;
 
-    response.data = malloc(1);
-    response.size = 0;
-    response.server = ctx->r->server;
-    response.app_id = ctx->app_id;
-
-    headers = curl_slist_append(headers, auth_header);
-    headers = curl_slist_append(headers, JSON_CONTENT_TYPE);
-    headers = curl_slist_append(headers, EXPECT);
-
-    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
-    res = curl_easy_perform(curl);
-    curl_slist_free_all(headers);
-    if (res == CURLE_OK) {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code == HTTP_OK) {
-            curl_pool_put(curl_pool, curl);
-            return response.data;
-        }
-
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server,
-                "[%s]: post_request: status %ld, url: %s", ctx->app_id, status_code, url);
-    }
-    else {
-        size_t len = strlen(errbuf);
-        if (len) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server,
-                    "[%s]: post_request failed: %s", ctx->app_id, errbuf);
-        }
-        else {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server,
-                    "[%s]: post_request failed: %s", ctx->app_id, curl_easy_strerror(res));
-        }
-    }
-    curl_pool_put(curl_pool, curl);
-    free(response.data);
-    return NULL;
+    CURLcode status = post_request_helper(curl, url, payload, conf, ctx->r->server, response_data);
+    curl_pool_put(conf->curl_pool, curl);
+    return status;
 }
 
 void set_call_reason(request_context *ctx, validation_result_t vr) {
     switch (vr) {
-        case NULL_COOKIE:
-            ctx->call_reason = NO_COOKIE;
+        case VALIDATION_RESULT_NULL_COOKIE:
+            ctx->call_reason = CALL_REASON_NONE;
             break;
-        case EXPIRED:
-            ctx->call_reason = EXPIRED_COOKIE;
+        case VALIDATION_RESULT_EXPIRED:
+            ctx->call_reason = CALL_REASON_EXPIRED_COOKIE;
             break;
-        case DECRYPTION_FAILED:
-            ctx->call_reason = COOKIE_DECRYPTION_FAILED;
+        case VALIDATION_RESULT_DECRYPTION_FAILED:
+            ctx->call_reason = CALL_REASON_COOKIE_DECRYPTION_FAILED;
             break;
-        case INVALID:
-            ctx->call_reason = COOKIE_VALIDATION_FAILED;
+        case VALIDATION_RESULT_INVALID:
+            ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
             break;
         default:
-            ctx->call_reason = COOKIE_VALIDATION_FAILED;
+            ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
+            break;
     }
 }
 
@@ -149,23 +103,29 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     }
 
     char *payload = create_captcha_payload(ctx, conf);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: request - (%s)", ctx->app_id, payload);
     if (!payload) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: failed to format captcha payload. url: (%s)", ctx->app_id, ctx->full_url);
+        ctx->pass_reason = PASS_REASON_ERROR;
         return true;
     }
 
-    char *response_str = post_request(conf->captcha_api_url, payload, conf->auth_header, ctx, conf->curl_pool);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: request - (%s)", ctx->app_id, payload);
+    char *response_str = NULL;
+    CURLcode status = post_request(conf->captcha_api_url, payload, ctx, conf, &response_str);
     free(payload);
-    if (!response_str) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->app_id, ctx->full_url);
-        return false; // in case we are getting non 200 response
+    if (status == CURLE_OK) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: server response (%s)", ctx->app_id, response_str);
+        captcha_response *c = parse_captcha_response(response_str, ctx);
+        free(response_str);
+        bool passed = (c && c->status == 0);
+        if (passed) {
+            ctx->pass_reason = PASS_REASON_CAPTCHA;
+        }
+        return passed;
     }
-
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: server response (%s)", ctx->app_id, response_str);
-    captcha_response *c = parse_captcha_response(response_str, ctx);
-    free(response_str);
-    return (c && c->status == 0);
+    ctx->pass_reason = (status == CURLE_OPERATION_TIMEDOUT) ? PASS_REASON_CAPTCHA_TIMEOUT : PASS_REASON_ERROR;
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: failed to perform captcha validation request. url: (%s)", ctx->app_id, ctx->full_url);
+    return false;
 }
 
 static void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
@@ -176,12 +136,11 @@ static void post_verification(request_context *ctx, px_config *conf, bool reques
             ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: post_verification: (%s) create activity failed", ctx->app_id, activity_type);
             return;
         }
-        char *resp = post_request(conf->activities_api_url, activity, conf->auth_header, ctx, conf->curl_pool);
-        free(activity);
-        if (resp) {
-            free(resp);
+        if (conf->background_activity_send) {
+            apr_queue_push(conf->activity_queue, activity);
         } else {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: post_verification: (%s) send failed", ctx->app_id, activity_type);
+            post_request(conf->activities_api_url, activity, ctx, conf, NULL);
+            free(activity);
         }
     }
 }
@@ -243,19 +202,22 @@ bool px_should_verify_request(request_rec *r, px_config *conf) {
 risk_response* risk_api_get(request_context *ctx, const px_config *conf) {
     char *risk_payload = create_risk_payload(ctx, conf);
     if (!risk_payload) {
+        ctx->pass_reason = PASS_REASON_ERROR;
         return NULL;
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: risk payload: %s", ctx->app_id, risk_payload);
-    char *risk_response_str = post_request(conf->risk_api_url , risk_payload, conf->auth_header, ctx, conf->curl_pool);
+    char *risk_response_str;
+    CURLcode status = post_request(conf->risk_api_url , risk_payload, ctx, conf, &risk_response_str);
     free(risk_payload);
-    if (!risk_response_str) {
-        return NULL;
-    }
-
+    if (status == CURLE_OK) {
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: risk response: %s", ctx->app_id, risk_response_str);
-    risk_response *risk_response = parse_risk_response(risk_response_str, ctx);
-    free(risk_response_str);
-    return risk_response;
+        risk_response *risk_response = parse_risk_response(risk_response_str, ctx);
+        free(risk_response_str);
+        return risk_response;
+    }
+    ctx->pass_reason = (status == CURLE_OPERATION_TIMEDOUT) ? PASS_REASON_S2S_TIMEOUT : PASS_REASON_ERROR;
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: no risk response, status %d", ctx->app_id, status);
+    return NULL;
 }
 
 int populate_captcha_cookie_data(apr_pool_t *p, const char *captcha_cookie, request_context *ctx) {
@@ -270,7 +232,6 @@ int populate_captcha_cookie_data(apr_pool_t *p, const char *captcha_cookie, requ
 request_context* create_context(request_rec *r, const px_config *conf) {
     request_context *ctx = (request_context*) apr_pcalloc(r->pool, sizeof(request_context));
 
-    ctx->app_id = conf->app_id;
     const char *px_cookie = NULL;
     const char *px_captcha_cookie = NULL;
     char *captcha_cookie = NULL;
@@ -309,7 +270,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 
     ctx->ip = get_request_ip(r, conf);
     if (!ctx->ip) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_context: request IP is NULL", ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: request IP is NULL", ctx->app_id);
     }
 
     ctx->px_cookie = px_cookie;
@@ -337,12 +298,14 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 
     ctx->http_version = version;
     ctx->headers = r->headers_in;
-    ctx->block_reason = NO_BLOCKING;
-    ctx->call_reason = NONE;
+    ctx->block_reason = BLOCK_REASON_NONE;
+    ctx->call_reason = CALL_REASON_NONE;
+    ctx->pass_reason = PASS_REASON_NONE; // initial value, should always get changed if request passes
     ctx->block_enabled = enable_block_for_hostname(r, conf->enabled_hostnames);
     ctx->r = r;
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: create_context: useragent: (%s), px_cookie: (%s), full_url: (%s), hostname: (%s) , http_method: (%s), http_version: (%s), uri: (%s), ip: (%s), block_enabled: (%d)", ctx->app_id, ctx->useragent, ctx->px_cookie, ctx->full_url, ctx->hostname, ctx->http_method, ctx->http_version, ctx->uri, ctx->ip, ctx->block_enabled);
+
     return ctx;
 }
 
@@ -358,6 +321,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             apr_status_t res = ap_cookie_remove2(ctx->r, PX_COOKIE, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
             if (res != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] could not remove _px from request", ctx->app_id);
+
             }
             post_verification(ctx, conf, true);
             return request_valid;
@@ -366,7 +330,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             // pxCaptcha is not valid: removing captcha cookie data
             ctx->uuid = NULL;
             ctx->vid = NULL;
-            ctx->call_reason = CAPTCHA_FAILED;
+            ctx->call_reason = CALL_REASON_CAPTCHA_FAILED;
             risk_response = risk_api_get(ctx, conf);
             goto handle_response;
         }
@@ -374,7 +338,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
 
     validation_result_t vr;
     if (ctx->px_cookie == NULL) {
-        vr = NULL_COOKIE;
+        vr = VALIDATION_RESULT_NULL_COOKIE;
     } else {
         risk_cookie *c = decode_cookie(ctx->px_cookie, conf->cookie_key, ctx);
         if (c) {
@@ -384,24 +348,26 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             vr = validate_cookie(c, ctx, conf->cookie_key);
         } else {
             ctx->px_cookie_orig = ctx->px_cookie;
-            vr = DECRYPTION_FAILED;
+            vr = VALIDATION_RESULT_DECRYPTION_FAILED;
         }
     }
     switch (vr) {
-        case VALID:
+        case VALIDATION_RESULT_VALID:
             request_valid = ctx->score < conf->blocking_score;
             if (!request_valid) {
-                ctx->block_reason = COOKIE;
+                ctx->block_reason = BLOCK_REASON_COOKIE;
             } else if (is_sensitive_route_prefix(ctx->r, conf ) || is_sensitive_route(ctx->r, conf)) {
-                ctx->call_reason = SENSITIVE_ROUTE;
+                ctx->call_reason = CALL_REASON_SENSITIVE_ROUTE;
                 risk_response = risk_api_get(ctx, conf);
                 goto handle_response;
+            } else {
+                ctx->pass_reason = PASS_REASON_COOKIE;
             }
             break;
-        case EXPIRED:
-        case DECRYPTION_FAILED:
-        case NULL_COOKIE:
-        case INVALID:
+        case VALIDATION_RESULT_EXPIRED:
+        case VALIDATION_RESULT_DECRYPTION_FAILED:
+        case VALIDATION_RESULT_NULL_COOKIE:
+        case VALIDATION_RESULT_INVALID:
             set_call_reason(ctx, vr);
             risk_response = risk_api_get(ctx, conf);
 handle_response:
@@ -412,7 +378,9 @@ handle_response:
                 }
                 request_valid = ctx->score < conf->blocking_score;
                 if (!request_valid) {
-                    ctx->block_reason = SERVER;
+                    ctx->block_reason = BLOCK_REASON_SERVER;
+                } else {
+                    ctx->pass_reason = PASS_REASON_S2S;
                 }
             } else {
                 ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s] px_verify_request: could not complete risk_api request", ctx->app_id);

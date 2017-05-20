@@ -19,6 +19,7 @@
 #include "apr_strings.h"
 #include "apr_escape.h"
 
+#include "px_utils.h"
 #include "px_types.h"
 #include "px_template.h"
 #include "px_enforcer.h"
@@ -30,7 +31,7 @@ APLOG_USE_MODULE(perimeterx);
 #endif
 
 static const char *DEFAULT_BASE_URL = "https://sapi-%s.perimeterx.net";
-static const char *RISK_API = "/api/v1/risk";
+static const char *RISK_API = "/api/v2/risk";
 static const char *CAPTCHA_API = "/api/v1/risk/captcha";
 static const char *ACTIVITIES_API = "/api/v1/collector/s2s";
 
@@ -41,10 +42,17 @@ static const int MAX_CURL_POOL_SIZE = 10000;
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
 static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
+static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers, must be greater than zero";
+static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size , must be greater than zero";
 
 static const char *block_tpl = "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"utf-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> <title>Access to this page has been denied.</title> <link href=\"https://fonts.googleapis.com/css?family=Open+Sans:300\" rel=\"stylesheet\"> <style> html,body{ margin: 0; padding: 0; font-family: 'Open Sans', sans-serif; color: #000; } a{ color: #c5c5c5; text-decoration: none; } .container{ align-items: center; display: flex; flex: 1; justify-content: space-between; flex-direction: column; height: 100%; } .container > div { width: 100%; display: flex; justify-content:center; } .container > div > div { display: flex; width: 80%; } .customer-logo-wrapper{ padding-top: 2rem; flex-grow: 0; background-color: #fff; visibility: {{logoVisibility}}; } .customer-logo{ border-bottom: 1px solid #000; } .customer-logo > img{ padding-bottom: 1rem; max-height: 50px; max-width: auto; } .page-title-wrapper{ flex-grow: 2; } .page-title { flex-direction: column-reverse; } .content-wrapper{ flex-grow: 5; } .content{ flex-direction: column; } .page-footer-wrapper{ align-items: center; flex-grow: 0.2; background-color: #000; color: #c5c5c5; font-size: 70%; } @media (min-width:768px){ html,body{ height: 100%; } } </style> <!-- Custom CSS --> {{# cssRef }} <link rel=\"stylesheet\" type=\"text/css\" href=\"{{cssRef}}\" /> {{/ cssRef }} </head> <body> <section class=\"container\"> <div class=\"customer-logo-wrapper\"> <div class=\"customer-logo\"> <img src=\"{{customLogo}}\" alt=\"Logo\"/> </div> </div> <div class=\"page-title-wrapper\"> <div class=\"page-title\"> <h1>Access to this page has been denied.</h1> </div> </div> <div class=\"content-wrapper\"> <div class=\"content\"> <p> You have been blocked because we believe you are using automation tools to browse the website. </p> <p> Please note that Javascript and Cookies must be enabled on your browser to access the website. </p> <p> If you think you have been blocked by mistake, please contact the website administrator with the reference ID below. </p> <p> Reference ID: #{{refId}} </p> </div> </div> <div class=\"page-footer-wrapper\"> <div class=\"page-footer\"> <p> Powered by <a href=\"https://www.perimeterx.com\">PerimeterX</a> , Inc. </p> </div> </div> </section> <!-- Px --> <script> ( function (){ window._pxAppId = '{{appId}}'; var p = document.getElementsByTagName(\"script\")[0], s = document.createElement(\"script\"); s.async = 1; s.src = '//client.perimeterx.net/{{appId}}/main.min.js'; p.parentNode.insertBefore(s, p); } () ); </script> <!-- Custom Script --> {{# jsRef }} <script src=\"{{jsRef}}\"></script> {{/ jsRef }} </body> </html> ";
 
 static const char *captcha_tpl = "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"utf-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> <title>Access to this page has been denied.</title> <link href=\"https://fonts.googleapis.com/css?family=Open+Sans:300\" rel=\"stylesheet\"> <style> html,body{ margin: 0; padding: 0; font-family: 'Open Sans', sans-serif; color: #000; } a{ color: #c5c5c5; text-decoration: none; } .container{ align-items: center; display: flex; flex: 1; justify-content: space-between; flex-direction: column; height: 100%; } .container > div { width: 100%; display: flex; justify-content:center; } .container > div > div { display: flex; width: 80%; } .customer-logo-wrapper{ padding-top: 2rem; flex-grow: 0; background-color: #fff; visibility: {{logoVisibility}}; } .customer-logo{ border-bottom: 1px solid #000; } .customer-logo > img{ padding-bottom: 1rem; max-height: 50px; max-width: auto; } .page-title-wrapper{ flex-grow: 2; } .page-title { flex-direction: column-reverse; } .content-wrapper{ flex-grow: 5; } .content{ flex-direction: column; } .page-footer-wrapper{ align-items: center; flex-grow: 0.2; background-color: #000; color: #c5c5c5; font-size: 70%; } @media (min-width:768px){ html,body{ height: 100%; } } </style> <!-- Custom CSS --> {{#cssRef}} <link rel=\"stylesheet\" type=\"text/css\" href=\"{{cssRef}}\" /> {{/cssRef}} <script src=\"https://www.google.com/recaptcha/api.js\" async defer></script> </head> <body> <section class=\"container\"> <div class=\"customer-logo-wrapper\"> <div class=\"customer-logo\"> <img src=\"{{customLogo}}\" alt=\"Logo\"/> </div> </div> <div class=\"page-title-wrapper\"> <div class=\"page-title\"> <h1>Please verify you are a human</h1> </div> </div> <div class=\"content-wrapper\"> <div class=\"content\"> <p> Please click \"I am not a robot\" to continue </p> <div class=\"g-recaptcha\" data-sitekey=\"6Lcj-R8TAAAAABs3FrRPuQhLMbp5QrHsHufzLf7b\" data-callback=\"handleCaptcha\" data-theme=\"dark\"> </div> <p> Access to this page has been denied because we believe you are using automation tools to browse the website. </p> <p> This may happen as a result of the following: </p> <ul> <li> Javascript is disabled or blocked by an extension (ad blockers for example) </li> <li> Your browser does not support cookies </li> </ul> <p> Please make sure that Javascript and cookies are enabled on your browser and that you are not blocking them from loading. </p> <p> Reference ID: #{{refId}} </p> </div> </div> <div class=\"page-footer-wrapper\"> <div class=\"page-footer\"> <p> Powered by <a href=\"https://www.perimeterx.com\">PerimeterX</a> , Inc. </p> </div> </div> </section> <!-- Px --> <script> ( function (){ window._pxAppId = '{{appId}}'; var p = document.getElementsByTagName(\"script\")[0], s = document.createElement(\"script\"); s.async = 1; s.src = '//client.perimeterx.net/{{appId}}/main.min.js'; p.parentNode.insertBefore(s, p); } () ); </script> <!-- Captcha --> <script> window.px_vid = '{{vid}}'; function handleCaptcha(response){ var vid = '{{vid}}'; var uuid = '{{uuid}}'; var name = \"_pxCaptcha\"; var expiryUtc = new Date(Date.now()+1000*10).toUTCString(); var cookieParts = [ name, \"=\", response+\":\"+uuid+\":\"+vid, \"; expires=\", expiryUtc, \"; path=/\" ]; document.cookie = cookieParts.join(\"\"); location.reload(); } </script> <!-- Custom Script --> {{#jsRef}} <script src=\"{{jsRef}}\"></script> {{/jsRef}} </body> </html>";
+
+#ifdef DEBUG
+extern const char *BLOCK_REASON_STR[];
+extern const char *CALL_REASON_STR[];
+#endif // DEBUG
 
 int render_page(request_rec *r, const request_context *ctx, const px_config *conf) {
     int ret_val;
@@ -79,7 +87,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
         apr_table_set(r->headers_out, "X-PX-SCORE", apr_itoa(r->pool, ctx->score));
         apr_table_set(r->headers_out, "X-PX-EXTRACTED-IP", ctx->ip);
         apr_table_set(r->headers_out, "X-PX-BLOCK-REASON", BLOCK_REASON_STR[ctx->block_reason]);
-        apr_table_set(r->headers_out, "X-PX-CALL-REASON", S2S_CALL_REASON_STR[ctx->call_reason]);
+        apr_table_set(r->headers_out, "X-PX-CALL-REASON", CALL_REASON_STR[ctx->call_reason]);
 #endif
         if (!request_valid && ctx->block_enabled) {
             if (r->method && strcmp(r->method, "POST") == 0) {
@@ -102,7 +110,6 @@ int px_handle_request(request_rec *r, px_config *conf) {
                 apr_table_set(r->headers_out, "Location", redirect_url);
                 return HTTP_TEMPORARY_REDIRECT;
             }
-
             if (render_page(r, ctx, conf) != 0) {
                 ap_log_error(APLOG_MARK, LOG_ERR, 0, r->server, "[%s]: Could not create block page with template, passing request", conf->app_id);
             } else {
@@ -117,10 +124,71 @@ int px_handle_request(request_rec *r, px_config *conf) {
     return OK;
 }
 
+static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
+    activity_consumer_data *consumer_data = (activity_consumer_data*)data;
+    px_config *conf = consumer_data->config;
+    CURL *curl = curl_easy_init();
+    void *v;
+    if (!curl) {
+        ap_log_error(APLOG_MARK, LOG_ERR, 0, consumer_data->server, "[%s]: could not create curl handle, thread will not run to consume messages", conf->app_id);
+        return NULL;
+    }
+    while (true) {
+        apr_status_t rv = apr_queue_pop(conf->activity_queue, &v);
+        if (rv == APR_EINTR)
+            continue;
+        if (rv == APR_EOF)
+            break;
+        if (rv == APR_SUCCESS && v) {
+            char *activity = (char *)v;
+            post_request_helper(curl, conf->activities_api_url, activity, conf, consumer_data->server, NULL);
+            free(activity);
+        }
+    }
+    curl_easy_cleanup(curl);
+    return NULL;
+}
+
 // --------------------------------------------------------------------------------
+//
+static apr_status_t destroy_thread_pool(void *t) {
+    apr_thread_pool_t *thread_pool = (apr_thread_pool_t*)t;
+    apr_thread_pool_destroy(thread_pool);
+    return APR_SUCCESS;
+}
+
+static apr_status_t destroy_activity_queue(void *q) {
+    apr_queue_t *queue = (apr_queue_t*)q;
+    apr_queue_term(queue);
+    return APR_SUCCESS;
+}
 
 static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
     curl_global_init(CURL_GLOBAL_ALL);
+    px_config *cfg = ap_get_module_config(s->module_config, &perimeterx_module);
+    if (cfg->background_activity_send) {
+        apr_status_t rv = apr_queue_create(&cfg->activity_queue, cfg->background_activity_queue_size, s->process->pool);
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, LOG_ERR, 0, s, "[%s]: failed to initialize background activity queue", cfg->app_id);
+            exit(1);
+        }
+        activity_consumer_data *consumer_data = apr_palloc(s->process->pool, sizeof(activity_consumer_data));
+        consumer_data->server = s;
+        consumer_data->config = cfg;
+        rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, s->process->pool);
+        if (rv != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, LOG_ERR, 0, s, "[%s]: failed to initialize background activity thread pool", cfg->app_id);
+            exit(1);
+        }
+        for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
+            rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, consumer_data, 0, NULL);
+            if (rv != APR_SUCCESS) {
+                ap_log_error(APLOG_MARK, LOG_ERR, 0, s, "[%s]: failed to push background activity consumer", cfg->app_id);
+            }
+        }
+        apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_activity_queue);
+        apr_pool_cleanup_register(s->process->pool, cfg->activity_queue, apr_pool_cleanup_null, destroy_thread_pool);
+    }
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
@@ -366,6 +434,41 @@ static const char *set_custom_logo(cmd_parms *cmd, void *config, const char *cus
     return NULL;
 }
 
+static const char *set_background_activity_send(cmd_parms *cmd, void *config, int arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->background_activity_send = arg ? true : false;
+    return NULL;
+}
+
+static const char *set_background_activity_workers(cmd_parms *cmd, void *config, const char *arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    int worker_number = atoi(arg);
+    if (worker_number < 1) {
+        return INVALID_WORKER_NUMBER_QUEUE_SIZE;
+    }
+    conf->background_activity_workers = worker_number;
+    return NULL;
+}
+
+static const char *set_background_activity_queue_size(cmd_parms *cmd, void *config, const char *arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    int queue_size = atoi(arg);
+    if (queue_size < 1) {
+        return INVALID_ACTIVITY_QUEUE_SIZE;
+    }
+    conf->background_activity_queue_size = queue_size;
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -379,7 +482,7 @@ static void *create_config(apr_pool_t *p) {
         conf->send_page_activities = true;
         conf->blocking_score = 70;
         conf->captcha_enabled = true;
-        conf->module_version = "Apache Module v2.1.3";
+        conf->module_version = "Apache Module v2.2.0-RC";
         conf->skip_mod_by_envvar = false;
         conf->curl_pool_size = 40;
         conf->base_url = DEFAULT_BASE_URL;
@@ -400,6 +503,9 @@ static void *create_config(apr_pool_t *p) {
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
+        conf->background_activity_send = true;
+        conf->background_activity_workers = 10;
+        conf->background_activity_queue_size = 1000;
     }
     return conf;
 }
@@ -515,6 +621,21 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable blocking by hostname - list of hostnames on which PX module will be enabled for"),
+    AP_INIT_FLAG("BackgroundActivitySend",
+            set_background_activity_send,
+            NULL,
+            OR_ALL,
+            "Use background workers to send activities"),
+    AP_INIT_TAKE1("BackgroundActivityWorkers",
+            set_background_activity_workers,
+            NULL,
+            OR_ALL,
+            "Number of background workers to send activities"),
+    AP_INIT_TAKE1("BackgroundActivityQueueSize",
+            set_background_activity_queue_size,
+            NULL,
+            OR_ALL,
+            "Queue size for background activity send"),
     { NULL }
 };
 

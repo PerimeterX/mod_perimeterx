@@ -8,6 +8,33 @@
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
+static const char *PASS_REASON_STR[] = {
+    [PASS_REASON_NONE] = "none",
+    [PASS_REASON_COOKIE] = "cookie",
+    [PASS_REASON_TIMEOUT] = "timeout",
+    [PASS_REASON_S2S] = "s2s",
+    [PASS_REASON_S2S_TIMEOUT] = "s2s_timeout",
+    [PASS_REASON_CAPTCHA] = "captcha",
+    [PASS_REASON_CAPTCHA_TIMEOUT] = "captcha_timeout",
+    [PASS_REASON_ERROR] = "error",
+};
+
+static const char *CALL_REASON_STR[] = {
+    [CALL_REASON_NONE] = "none",
+    [CALL_REASON_NO_COOKIE] = "no_cookie",
+    [CALL_REASON_EXPIRED_COOKIE] = "cookie_expired",
+    [CALL_REASON_COOKIE_DECRYPTION_FAILED] = "cookie_decryption_failed",
+    [CALL_REASON_COOKIE_VALIDATION_FAILED] = "cookie_validation_failed",
+    [CALL_REASON_SENSITIVE_ROUTE] = "sensitive_route",
+    [CALL_REASON_CAPTCHA_FAILED] = "captcha_failed",
+};
+
+static const char *BLOCK_REASON_STR[] = {
+    [BLOCK_REASON_NONE] = "none",
+    [BLOCK_REASON_COOKIE] = "cookie_high_score",
+    [BLOCK_REASON_SERVER] = "s2s_high_score",
+};
+
 // format json requests
 //
 
@@ -27,6 +54,8 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         if (ctx->px_cookie) {
             json_object_set_new(details, "px_cookie", json_string(ctx->px_cookie_decrypted));
         }
+        const char *pass_reason_str = PASS_REASON_STR[ctx->pass_reason];
+        json_object_set_new(details, "pass_reason", json_string(pass_reason_str));
     }
 
     // Extract all headers and jsonfy it
@@ -88,7 +117,7 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
 
     // additional object
     json_t *j_additional = json_pack("{s:s, s:s, s:s, s:s}",
-            "s2s_call_reason", S2S_CALL_REASON_STR[ctx->call_reason],
+            "s2s_call_reason", CALL_REASON_STR[ctx->call_reason],
             "http_method", ctx->http_method,
             "http_version", ctx->http_version,
             "module_version", conf->module_version);
@@ -199,13 +228,15 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     }
 
     int status = -1;
+    int score = 0;
     const char *uuid = NULL;
-    int non_human = 0;
-    if (json_unpack(j_response, "{s:i,s:s,s:{s:i}}",
+    const char *action = NULL;
+    if (json_unpack(j_response, "{s:i,s:s,s:i,s:s}",
                 "status", &status,
                 "uuid", &uuid,
-                "scores",
-                "non_human", &non_human)) {
+                "score", &score,
+                "action", &action
+                )) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: parse_risk_response: failed to unpack risk response (%s)", ctx->app_id, risk_response_str);
         json_decref(j_response);
         return NULL;
@@ -215,7 +246,8 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     if (parsed_response) {
         parsed_response->uuid = apr_pstrdup(ctx->r->pool, uuid);
         parsed_response->status = status;
-        parsed_response->score = non_human;
+        parsed_response->score = score;
+        parsed_response->action = action;
     }
     json_decref(j_response);
     return parsed_response;
