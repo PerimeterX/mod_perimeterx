@@ -207,7 +207,7 @@ risk_response* risk_api_get(request_context *ctx, px_config *conf) {
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: risk payload: %s", ctx->app_id, risk_payload);
     char *risk_response_str;
-    CURLcode status = post_request(conf->risk_api_url , risk_payload, ctx, conf, &risk_response_str);
+    CURLcode status = post_request(conf->risk_api_url, risk_payload, ctx, conf, &risk_response_str);
     free(risk_payload);
     if (status == CURLE_OK) {
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: risk response: %s", ctx->app_id, risk_response_str);
