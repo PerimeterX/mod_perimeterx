@@ -56,6 +56,7 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         }
         const char *pass_reason_str = PASS_REASON_STR[ctx->pass_reason];
         json_object_set_new(details, "pass_reason", json_string(pass_reason_str));
+        json_object_set_new(details, "client_uuid", json_string(ctx->uuid));
     }
 
     // Extract all headers and jsonfy it
