@@ -223,8 +223,13 @@ validation_result_t validate_cookie(const risk_cookie *cookie, request_context *
     }
 
     char signature[HASH_LEN];
-    const char *signing_fields[] = { ctx->useragent } ;
-    digest_cookie(cookie, ctx, cookie_key, signing_fields, sizeof(signing_fields)/sizeof(*signing_fields), signature, HASH_LEN);
+    int signing_fields_count = 0;
+    const char *signing_fields[1];
+    if (ctx->token_origin == TOKEN_ORIGIN_COOKIE) {
+        signing_fields[0] = ctx->useragent;
+        signing_fields_count = 1;
+    } 
+    digest_cookie(cookie, ctx, cookie_key, signing_fields, signing_fields_count, signature, HASH_LEN);
 
     if (memcmp(signature, cookie->hash, 64) != 0) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: invalid signature", ctx->app_id);
