@@ -2,9 +2,7 @@
 
 #include <apr_strings.h>
 #include <http_log.h>
-#if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
 #include <util_cookies.h>
-#endif
 
 #include "px_cookie.h"
 #include "px_json.h"
