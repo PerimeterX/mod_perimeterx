@@ -136,8 +136,8 @@ int get_px_token_from_headers(apr_pool_t *pool, apr_table_t *headers, const char
         char *header_cpy = apr_pstrdup(pool, header_value);
         const char *version = apr_strtok(header_cpy, ":", &rest); // version could be only 1 for now
         if (apr_strnatcmp(version, "1") == 0) {
-            const char *px_token = apr_strtok(NULL, ":", &rest);
-            *token =  apr_pstrdup(pool, px_token);
+            const char *px_token = apr_strtok(NULL, "", &rest);
+            *token =  px_token;
             return 1;
         }
     }

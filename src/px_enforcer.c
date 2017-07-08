@@ -260,7 +260,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: request IP is NULL", conf->app_id);
     }
 
-    ctx->px_cookie = px_token;
+    ctx->px_cookie = apr_pstrdup(r->pool, px_token);
     ctx->uri = r->unparsed_uri;
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
