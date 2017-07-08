@@ -243,7 +243,6 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     int found_on_header = get_px_token_from_headers(r->pool, r->headers_in, &px_token);
     if (found_on_header) {
         ctx->token_origin = TOKEN_ORIGIN_HEADER;
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "TOKEN WAS: %s", px_token);
     } else {
         ap_cookie_read(r, PX_COOKIE, &px_token, 0);
     }
