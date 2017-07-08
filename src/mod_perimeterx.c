@@ -53,6 +53,8 @@ static const char *block_tpl = "<!DOCTYPE html> <html lang=\"en\"> <head> <meta 
 
 static const char *captcha_tpl = "<!DOCTYPE html> <html lang=\"en\"> <head> <meta charset=\"utf-8\"> <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> <title>Access to this page has been denied.</title> <link href=\"https://fonts.googleapis.com/css?family=Open+Sans:300\" rel=\"stylesheet\"> <style> html,body{ margin: 0; padding: 0; font-family: 'Open Sans', sans-serif; color: #000; } a{ color: #c5c5c5; text-decoration: none; } .container{ align-items: center; display: flex; flex: 1; justify-content: space-between; flex-direction: column; height: 100%; } .container > div { width: 100%; display: flex; justify-content:center; } .container > div > div { display: flex; width: 80%; } .customer-logo-wrapper{ padding-top: 2rem; flex-grow: 0; background-color: #fff; visibility: {{logoVisibility}}; } .customer-logo{ border-bottom: 1px solid #000; } .customer-logo > img{ padding-bottom: 1rem; max-height: 50px; max-width: auto; } .page-title-wrapper{ flex-grow: 2; } .page-title { flex-direction: column-reverse; } .content-wrapper{ flex-grow: 5; } .content{ flex-direction: column; } .page-footer-wrapper{ align-items: center; flex-grow: 0.2; background-color: #000; color: #c5c5c5; font-size: 70%; } @media (min-width:768px){ html,body{ height: 100%; } } </style> <!-- Custom CSS --> {{#cssRef}} <link rel=\"stylesheet\" type=\"text/css\" href=\"{{cssRef}}\" /> {{/cssRef}} <script src=\"https://www.google.com/recaptcha/api.js\" async defer></script> </head> <body> <section class=\"container\"> <div class=\"customer-logo-wrapper\"> <div class=\"customer-logo\"> <img src=\"{{customLogo}}\" alt=\"Logo\"/> </div> </div> <div class=\"page-title-wrapper\"> <div class=\"page-title\"> <h1>Please verify you are a human</h1> </div> </div> <div class=\"content-wrapper\"> <div class=\"content\"> <p> Please click \"I am not a robot\" to continue </p> <div class=\"g-recaptcha\" data-sitekey=\"6Lcj-R8TAAAAABs3FrRPuQhLMbp5QrHsHufzLf7b\" data-callback=\"handleCaptcha\" data-theme=\"dark\"> </div> <p> Access to this page has been denied because we believe you are using automation tools to browse the website. </p> <p> This may happen as a result of the following: </p> <ul> <li> Javascript is disabled or blocked by an extension (ad blockers for example) </li> <li> Your browser does not support cookies </li> </ul> <p> Please make sure that Javascript and cookies are enabled on your browser and that you are not blocking them from loading. </p> <p> Reference ID: #{{refId}} </p> </div> </div> <div class=\"page-footer-wrapper\"> <div class=\"page-footer\"> <p> Powered by <a href=\"https://www.perimeterx.com\">PerimeterX</a> , Inc. </p> </div> </div> </section> <!-- Px --> <script> ( function (){ window._pxAppId = '{{appId}}'; var p = document.getElementsByTagName(\"script\")[0], s = document.createElement(\"script\"); s.async = 1; s.src = '//client.perimeterx.net/{{appId}}/main.min.js'; p.parentNode.insertBefore(s, p); } () ); </script> <!-- Captcha --> <script> window.px_vid = '{{vid}}'; function handleCaptcha(response){ var vid = '{{vid}}'; var uuid = '{{uuid}}'; var name = \"_pxCaptcha\"; var expiryUtc = new Date(Date.now()+1000*10).toUTCString(); var cookieParts = [ name, \"=\", response+\":\"+uuid+\":\"+vid, \"; expires=\", expiryUtc, \"; path=/\" ]; document.cookie = cookieParts.join(\"\"); location.reload(); } </script> <!-- Custom Script --> {{#jsRef}} <script src=\"{{jsRef}}\"></script> {{/jsRef}} </body> </html>";
 
+const static char *mobile_captcha_tpl = "mobile captcha template";
+
 #ifdef DEBUG
 extern const char *BLOCK_REASON_STR[];
 extern const char *CALL_REASON_STR[];
@@ -61,7 +63,12 @@ extern const char *CALL_REASON_STR[];
 int render_page(request_rec *r, const request_context *ctx, const px_config *conf) {
     int ret_val;
     char *html = NULL;
-    const char *tpl = conf->captcha_enabled ? captcha_tpl : block_tpl;
+    const char *tpl;
+    if (conf->captcha_enabled) { 
+        tpl = ctx->token_origin == TOKEN_ORIGIN_COOKIE ? captcha_tpl : mobile_captcha_tpl;
+    } else {
+        tpl = block_tpl;
+    }
     size_t size;
     int res = render_template(tpl, &html, ctx, conf, &size);
     if (res == 0) {
