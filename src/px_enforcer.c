@@ -238,58 +238,37 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     request_context *ctx = (request_context*) apr_pcalloc(r->pool, sizeof(request_context));
 
     ctx->app_id = conf->app_id;
-    const char *px_cookie = NULL;
+    ctx->r = r;
+
+    const char *px_token = NULL;
+    ctx->token_origin = TOKEN_ORIGIN_COOKIE;
+    int found_on_header = get_px_token_from_headers(r->pool, r->headers_in, &px_token);
+    if (found_on_header) {
+        ctx->token_origin = TOKEN_ORIGIN_HEADER;
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "TOKEN WAS: %s", px_token);
+    } else {
+        ap_cookie_read(r, PX_COOKIE, &px_token, 0);
+    }
+
     const char *px_captcha_cookie = NULL;
     char *captcha_cookie = NULL;
-# if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
-    apr_status_t status = ap_cookie_read(r, PX_COOKIE, &px_cookie, 0);
-    status = ap_cookie_read(r, CAPTCHA_COOKIE, &px_captcha_cookie, 0);
+    apr_status_t status = ap_cookie_read(r, CAPTCHA_COOKIE, &px_captcha_cookie, 0);
     if (status == APR_SUCCESS) {
         captcha_cookie = apr_pstrdup(r->pool, px_captcha_cookie);
     }
-
-# else
-    char *cookie = NULL;
-    char *strtok_ctx = NULL;
-
-    char *cookies = apr_pstrdup(r->pool, (char *) apr_table_get(r->headers_in, "Cookie"));
-    if (cookies) {
-        cookie = apr_strtok(cookies, ";", &strtok_ctx);
-
-        while (cookie) {
-            char *val_ctx;
-            //trim leading space
-            if (*cookie == ' ') {
-                cookie ++;
-            }
-            if (strncmp(cookie, CAPTCHA_COOKIE, 10) == 0) {
-                apr_pstrdup(r->pool, apr_strtok(cookie, "=", &val_ctx));
-                captcha_cookie = apr_pstrdup(r->pool, apr_strtok(NULL, "", &val_ctx));
-            } else if (strncmp(cookie, PX_COOKIE, 3) == 0) {
-                apr_strtok(cookie, "=", &val_ctx);
-                px_cookie = apr_pstrdup(r->pool, apr_strtok(NULL, "", &val_ctx));
-            }
-            cookie = apr_strtok(NULL, ";", &strtok_ctx);
-        }
-    }
-#endif
 
     ctx->ip = get_request_ip(r, conf);
     if (!ctx->ip) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: request IP is NULL", conf->app_id);
     }
 
-    ctx->px_cookie = px_cookie;
-    ctx->px_cookie_decrypted = NULL;
-    ctx->px_cookie_orig = NULL;
+    ctx->px_cookie = px_token;
     ctx->uri = r->unparsed_uri;
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
     ctx->useragent = apr_table_get(r->headers_in, "User-Agent");
     // TODO(barak): full_url is missing the protocol like http:// or https://
     ctx->full_url = apr_pstrcat(r->pool, r->hostname, r->unparsed_uri, NULL);
-    ctx->vid = NULL;
-    ctx->px_cookie_orig = NULL;
 
     if (captcha_cookie) {
         populate_captcha_cookie_data(r->pool, captcha_cookie, ctx);
@@ -308,7 +287,6 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->call_reason = CALL_REASON_NONE;
     ctx->pass_reason = PASS_REASON_NONE; // initial value, should always get changed if request passes
     ctx->block_enabled = enable_block_for_hostname(r, conf->enabled_hostnames);
-    ctx->r = r;
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: useragent: (%s), px_cookie: (%s), full_url: (%s), hostname: (%s) , http_method: (%s), http_version: (%s), uri: (%s), ip: (%s), block_enabled: (%d)", conf->app_id, ctx->useragent, ctx->px_cookie, ctx->full_url, ctx->hostname, ctx->http_method, ctx->http_version, ctx->uri, ctx->ip, ctx->block_enabled);
 

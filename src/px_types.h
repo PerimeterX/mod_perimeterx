@@ -105,6 +105,11 @@ typedef enum {
     BLOCK_REASON_SERVER,
 } block_reason_t;
 
+typedef enum {
+    TOKEN_ORIGIN_COOKIE,
+    TOKEN_ORIGIN_HEADER,
+} token_origin_t;
+
 typedef struct risk_cookie_t {
     const char *timestamp;
     long long ts;
@@ -155,6 +160,7 @@ typedef struct request_context_t {
     bool made_api_call;
     request_rec *r;
     double api_rtt;
+    token_origin_t token_origin;
 } request_context;
 
 #endif

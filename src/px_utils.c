@@ -8,6 +8,7 @@
 
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
+static const char *MOBILE_SDK_HEADER = "X-PX-AUTHORIZATION";
 
 void update_and_notify_health_check(px_config *conf, server_rec *server) {
     if (!conf->px_service_monitor) {
@@ -108,11 +109,7 @@ const char* extract_first_ip(apr_pool_t *p, const char *ip) {
 }
 
 const char *get_request_ip(const request_rec *r, const px_config *conf) {
-# if AP_SERVER_MAJORVERSION_NUMBER == 2 && AP_SERVER_MINORVERSION_NUMBER == 4
     const char* socket_ip =  r->useragent_ip;
-# else
-    const char* socket_ip = r->connection->remote_ip;
-#endif
     const apr_array_header_t *ip_header_keys = conf->ip_header_keys;
     // looking for the first valid ip address in the configured IPHeader list
     for (int i = 0; i < ip_header_keys->nelts; i++) {
@@ -130,4 +127,19 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
     }
     // no valid ip found in IPHeader values - using socket_ip as a fallback
     return socket_ip;
+}
+
+int get_px_token_from_headers(apr_pool_t *pool, apr_table_t *headers, const char **token) {
+    const char *header_value = apr_table_get(headers, MOBILE_SDK_HEADER);
+    if (header_value) {
+        char *rest;
+        char *header_cpy = apr_pstrdup(pool, header_value);
+        const char *version = apr_strtok(header_cpy, ":", &rest); // version could be only 1 for now
+        if (apr_strnatcmp(version, "1") == 0) {
+            const char *px_token = apr_strtok(NULL, ":", &rest);
+            *token =  apr_pstrdup(pool, px_token);
+            return 1;
+        }
+    }
+    return 0;
 }
