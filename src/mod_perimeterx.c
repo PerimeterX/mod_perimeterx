@@ -77,7 +77,7 @@ int create_response(px_config *conf, request_context *ctx) {
     // render html page with the relevant template
     int res = render_template(template, &html, ctx, conf, &size);
     if (res) {
-        // failed
+        // failed to render
         return 1;
     }
 
@@ -85,9 +85,11 @@ int create_response(px_config *conf, request_context *ctx) {
     char *response;
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
         int html_len = strlen(html);
-        int encoded_len = apr_base64_encode_len(html_len);
-        char *encoded_html = apr_palloc(ctx->r->pool, encoded_len);
-        if (apr_base64_encode(encoded_html, html, html_len) == 0) {
+        int expected_encoded_len = apr_base64_encode_len(html_len);
+        char *encoded_html = apr_palloc(ctx->r->pool, expected_encoded_len);
+        int encoded_len = apr_base64_encode(encoded_html, html, html_len);
+        free(html);
+        if (encoded_html == 0) {
             return 1;
         }
         ap_set_content_type(ctx->r, CONTENT_TYPE_JSON);
