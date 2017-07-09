@@ -273,6 +273,28 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
     return parsed_response;
 }
 
+char *create_mobile_response(px_config *cfg, request_context *ctx, const char *compiled_html) {
+    // request object
+    // TODO: check errors
+    json_t *j_mobile_response = json_pack("{s:s,s:s,s:s,s:s}",
+            "action", "captcha", // TODO: make it constat for now
+            "appId", ctx->app_id,
+            "page", compiled_html,
+            "collectorUrl", cfg->base_url);
+
+    if (ctx->vid) {
+        json_object_set_new(j_mobile_response, "vid", json_string(ctx->vid));
+    }
+    if (ctx->uuid) {
+        json_object_set_new(j_mobile_response, "uuid", json_string(ctx->uuid));
+    }
+
+    // dump as string
+    char *request_str = json_dumps(j_mobile_response, JSON_COMPACT);
+    json_decref(j_mobile_response);
+    return request_str;
+}
+
 #ifdef DEBUG
 const char* context_to_json_string(request_context *ctx) {
     json_error_t error;
