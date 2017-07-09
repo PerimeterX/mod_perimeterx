@@ -74,14 +74,12 @@ int create_response(px_config *conf, request_context *ctx) {
     // which template to use
     if (!conf->captcha_enabled) {
         template = block_tpl;
-    } else {
-        if (ctx->token_origin == TOKEN_ORIGIN_COOKIE) {
-            template = mobile_captcha_tpl;
-        }
+    } else if (ctx->token_origin == TOKEN_ORIGIN_COOKIE) {
+        template = mobile_captcha_tpl;
     }
 
     // render html page with the relevant template
-    int res = render_template(template, &html, ctx, conf, &size); //TODO: check what is the value
+    int res = render_template(template, &html, ctx, conf, &size);
     if (res) {
         // failed
         return 1;
@@ -93,7 +91,9 @@ int create_response(px_config *conf, request_context *ctx) {
         int html_len = strlen(html);
         int encoded_len = apr_base64_encode_len(html_len);
         char *encoded_html = apr_palloc(ctx->r->pool, encoded_len);
-        int encode_res = apr_base64_encode(dest, html, html_len);
+        if (apr_base64_encode(encoded_html, html, html_len) == 0) {
+            return 1;
+        }
         response = create_mobile_response(conf, ctx, encoded_html);
     } else {
         response = html;
