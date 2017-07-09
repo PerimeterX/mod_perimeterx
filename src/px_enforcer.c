@@ -264,6 +264,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
     ctx->useragent = apr_table_get(r->headers_in, "User-Agent");
+    ctx->action = conf->captcha_enabled ? ACTION_CAPTCHA : ACTION_BLOCK;
     // TODO(barak): full_url is missing the protocol like http:// or https://
     ctx->full_url = apr_pstrcat(r->pool, r->hostname, r->unparsed_uri, NULL);
 

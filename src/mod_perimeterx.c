@@ -68,14 +68,10 @@ int create_response(px_config *conf, request_context *ctx) {
     size_t size;
     char *html = NULL;
 
-    // which template we should use
-    const char *template = captcha_tpl;
-
-    // which template to use
-    if (!conf->captcha_enabled) {
-        template = block_tpl;
-    } else if (ctx->token_origin == TOKEN_ORIGIN_COOKIE) {
-        template = mobile_captcha_tpl;
+    // which template to use in response
+    const char *template = block_tpl;
+    if (ctx->action == ACTION_CAPTCHA) {
+        template = ctx->token_origin == TOKEN_ORIGIN_COOKIE ? captcha_tpl : mobile_captcha_tpl;
     }
 
     // render html page with the relevant template
@@ -94,6 +90,7 @@ int create_response(px_config *conf, request_context *ctx) {
         if (apr_base64_encode(encoded_html, html, html_len) == 0) {
             return 1;
         }
+        ap_set_content_type(ctx->r, CONTENT_TYPE_JSON);
         response = create_mobile_response(conf, ctx, encoded_html);
     } else {
         response = html;
@@ -167,8 +164,8 @@ int px_handle_request(request_rec *r, px_config *conf) {
             }
 
             if (create_response(conf, ctx) == 0) {
+                // failed to create response
                 return DONE;
-                // this is an error, what should we do?
             }
             ap_log_error(APLOG_MARK, LOG_ERR, 0, r->server, "[%s]: Could not create block page with template, passing request", conf->app_id);
         }

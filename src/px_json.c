@@ -40,9 +40,13 @@ static const char *TOKEN_ORIGIN_STR[] = {
     [TOKEN_ORIGIN_HEADER] = "header",
 };
 
+static const char *ACTION_STR[] = {
+    [ACTION_CAPTCHA] = "captcha",
+    [ACTION_BLOCK] = "block",
+};
+
 // format json requests
 //
-
 char *create_activity(const char *activity_type, const px_config *conf, const request_context *ctx) {
     json_t *details = json_pack("{s:i, s:s, s:s, s:s, s:s}",
             "block_score", ctx->score,
@@ -274,10 +278,8 @@ risk_response* parse_risk_response(const char* risk_response_str, const request_
 }
 
 char *create_mobile_response(px_config *cfg, request_context *ctx, const char *compiled_html) {
-    // request object
-    // TODO: check errors
     json_t *j_mobile_response = json_pack("{s:s,s:s,s:s,s:s}",
-            "action", "captcha", // TODO: make it constat for now
+            "action", ACTION_STR[ctx->action],
             "appId", ctx->app_id,
             "page", compiled_html,
             "collectorUrl", cfg->base_url);

@@ -110,6 +110,11 @@ typedef enum {
     TOKEN_ORIGIN_HEADER,
 } token_origin_t;
 
+typedef enum {
+    ACTION_CAPTCHA,
+    ACTION_BLOCK,
+} action_t;
+
 typedef struct risk_cookie_t {
     const char *timestamp;
     long long ts;
@@ -161,6 +166,7 @@ typedef struct request_context_t {
     request_rec *r;
     double api_rtt;
     token_origin_t token_origin;
+    action_t action;
 } request_context;
 
 #endif
