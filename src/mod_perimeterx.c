@@ -164,9 +164,9 @@ int px_handle_request(request_rec *r, px_config *conf) {
             }
 
             if (create_response(conf, ctx) == 0) {
-                // failed to create response
                 return DONE;
             }
+            // failed to create response
             ap_log_error(APLOG_MARK, LOG_ERR, 0, r->server, "[%s]: Could not create block page with template, passing request", conf->app_id);
         }
     }
