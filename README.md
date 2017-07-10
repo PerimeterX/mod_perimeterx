@@ -79,6 +79,10 @@ Loaded Modules:
     IPHeader X-True-IP
     CurlPoolSize 100
     Captcha On
+    CaptchaTimeout 1000
+    ScoreHeader On
+    ScoreHeaderName X-PX-SCORE
+    
 
     # service monitor directives
     PXServiceMonitor On
@@ -89,11 +93,6 @@ Loaded Modules:
     SensitiveRoutes /login
     PXWhitelistRoutes /server-status /staging
     PXWhitelistUserAgents "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/534.34 (KHTML,  like Gecko) PhantomJS/1.9.0 (development) Safari/534.34"
-    
-    # background activities send
-    BackgroundActivitySend On
-    BackgroundActivityWorkers 100
-    BackgroundActivityQueueSize 500
 </IfModule>
 ```
 

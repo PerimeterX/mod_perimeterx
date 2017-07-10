@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/) 
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [2.3.1] - 5-35-2017
+## [2.4.0] - 7-10-2017
+
+* Add UUID to page_requested.
+* Add score header to response.
+* Add `CaptchaTimeout` for captcha requests.
+
+
+## [2.3.1] - 5-30-2017
 
 * Bug fixes.
 
