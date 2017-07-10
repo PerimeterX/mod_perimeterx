@@ -240,6 +240,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 
     const char *px_token = NULL;
     ctx->token_origin = TOKEN_ORIGIN_COOKIE;
+    ctx->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
     int token_version = extract_token_and_version_from_header(r->pool, r->headers_in, &px_token);
     if (token_version > -1) {
         ctx->token_origin = TOKEN_ORIGIN_HEADER;
@@ -249,10 +250,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 
     const char *px_captcha_cookie = NULL;
     char *captcha_cookie = NULL;
-    apr_status_t status = ap_cookie_read(r, CAPTCHA_COOKIE, &px_captcha_cookie, 0);
-    if (status == APR_SUCCESS) {
-        captcha_cookie = apr_pstrdup(r->pool, px_captcha_cookie);
-    }
+    apr_status_t status = ap_cookie_read(r, CAPTCHA_COOKIE, &ctx->px_captcha, 1);
 
     ctx->ip = get_request_ip(r, conf);
     if (!ctx->ip) {
@@ -267,10 +265,6 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->action = conf->captcha_enabled ? ACTION_CAPTCHA : ACTION_BLOCK;
     // TODO(barak): full_url is missing the protocol like http:// or https://
     ctx->full_url = apr_pstrcat(r->pool, r->hostname, r->unparsed_uri, NULL);
-
-    if (captcha_cookie) {
-        populate_captcha_cookie_data(r->pool, captcha_cookie, ctx);
-    }
 
     // TODO(barak): parse without strtok
     char *saveptr;

@@ -36,7 +36,7 @@ APLOG_USE_MODULE(perimeterx);
 
 static const char *DEFAULT_BASE_URL = "https://sapi-%s.perimeterx.net";
 static const char *RISK_API = "/api/v2/risk";
-static const char *CAPTCHA_API = "/api/v1/risk/captcha";
+static const char *CAPTCHA_API = "/api/v2/risk/captcha";
 static const char *ACTIVITIES_API = "/api/v1/collector/s2s";
 static const char *HEALTH_CHECK_API = "/api/v1/kpi/status";
 

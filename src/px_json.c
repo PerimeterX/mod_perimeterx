@@ -45,6 +45,10 @@ static const char *ACTION_STR[] = {
     [ACTION_BLOCK] = "block",
 };
 
+static const char *CAPTCHA_TYPE_STR[] = {
+    [CAPTCHA_TYPE_RECAPTCHA] = "reCaptcha",
+};
+
 // format json requests
 //
 char *create_activity(const char *activity_type, const px_config *conf, const request_context *ctx) {
@@ -178,10 +182,11 @@ char *create_captcha_payload(const request_context *ctx, const px_config *conf) 
     json_t *j_headers = headers_to_json_helper(header_arr);
 
     // request object
-    json_t *j_request = json_pack("{s:s,s:s,s:s,s:O}",
+    json_t *j_request = json_pack("{s:s,s:s,s:s,s:s,s:O}",
             "ip", ctx->ip,
             "uri", ctx->uri,
             "url", ctx->full_url,
+            "captchaType", CAPTCHA_TYPE_STR[ctx->captcha_type],
             "headers", j_headers);
     json_decref(j_headers);
 

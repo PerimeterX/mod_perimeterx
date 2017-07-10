@@ -115,6 +115,10 @@ typedef enum {
     ACTION_BLOCK,
 } action_t;
 
+typedef enum {
+    CAPTCHA_TYPE_RECAPTCHA
+} captcha_type_t;
+
 typedef struct risk_cookie_t {
     const char *timestamp;
     long long ts;
@@ -167,6 +171,7 @@ typedef struct request_context_t {
     double api_rtt;
     token_origin_t token_origin;
     action_t action;
+    captcha_type_t captcha_type;
 } request_context;
 
 #endif
