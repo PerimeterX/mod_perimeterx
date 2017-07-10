@@ -64,7 +64,8 @@ extern const char *BLOCK_REASON_STR[];
 extern const char *CALL_REASON_STR[];
 #endif // DEBUG
 
-int create_response(px_config *conf, request_context *ctx, char **response) {
+char* create_response(px_config *conf, request_context *ctx) {
+    char *response;
     size_t html_size;
     char *html = NULL;
 
@@ -78,24 +79,24 @@ int create_response(px_config *conf, request_context *ctx, char **response) {
     int res = render_template(template, &html, ctx, conf, &html_size);
     if (res) {
         // failed to render
-        return 1;
+        return NULL;
     }
 
     // formulate server response according to type px token
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
-        int expected_encoded_len = apr_base64_encode_len(html_size + 1);
-        char *encoded_html = apr_palloc(ctx->r->pool, expected_encoded_len);
-        int encoded_len = apr_base64_encode(encoded_html, html, html_size + 1);
+        int expected_encoded_len = apr_base64_encode_len(html_size);
+        char *encoded_html = apr_palloc(ctx->r->pool, expected_encoded_len + 1);
+        int encoded_len = apr_base64_encode(encoded_html, html, html_size);
         free(html);
         if (encoded_html == 0) {
-            return 1;
+            return NULL;
         }
-        *response = create_mobile_response(conf, ctx, encoded_html);
+        response = create_mobile_response(conf, ctx, encoded_html);
     } else {
-        *response = html;
+        response = html;
     }
 
-    return 0;
+    return response;
 }
 
 int px_handle_request(request_rec *r, px_config *conf) {
@@ -158,9 +159,8 @@ int px_handle_request(request_rec *r, px_config *conf) {
                 return HTTP_TEMPORARY_REDIRECT;
             }
 
-            // write response
-            char *response;
-            if (create_response(conf, ctx, &response) == 0) {
+            char *response = create_response(conf, ctx);
+            if (response) {
                 const char *content_type = ctx->token_origin == TOKEN_ORIGIN_COOKIE ? CONTENT_TYPE_HTML : CONTENT_TYPE_JSON;
                 ap_set_content_type(ctx->r, content_type);
                 ctx->r->status = HTTP_FORBIDDEN;

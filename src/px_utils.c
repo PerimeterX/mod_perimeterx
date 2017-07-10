@@ -136,6 +136,9 @@ int extract_token_and_version_from_header(apr_pool_t *pool, apr_table_t *headers
         char *rest;
         char *header_cpy = apr_pstrdup(pool, header_value);
         const char *version = apr_strtok(header_cpy, ":", &rest);
+        if (version == NULL) {
+            return 0;
+        }
         const char *px_token = apr_strtok(NULL, "", &rest);
         *token =  px_token;
         return apr_atoi64(version);
