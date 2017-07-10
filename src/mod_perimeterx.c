@@ -82,7 +82,7 @@ char* create_response(px_config *conf, request_context *ctx) {
         return NULL;
     }
 
-    // formulate server response according to type px token
+    // formulate server response according to px token type
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
         int expected_encoded_len = apr_base64_encode_len(html_size);
         char *encoded_html = apr_palloc(ctx->r->pool, expected_encoded_len + 1);
