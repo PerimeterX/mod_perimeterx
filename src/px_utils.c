@@ -129,17 +129,16 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
     return socket_ip;
 }
 
-int get_px_token_from_headers(apr_pool_t *pool, apr_table_t *headers, const char **token) {
+// returns the token version, -1 if header not found
+int extract_token_and_version_from_header(apr_pool_t *pool, apr_table_t *headers, const char **token) {
     const char *header_value = apr_table_get(headers, MOBILE_SDK_HEADER);
     if (header_value) {
         char *rest;
         char *header_cpy = apr_pstrdup(pool, header_value);
         const char *version = apr_strtok(header_cpy, ":", &rest); // version could be only 1 for now
-        if (apr_strnatcmp(version, "1") == 0) {
-            const char *px_token = apr_strtok(NULL, "", &rest);
-            *token =  px_token;
-            return 1;
-        }
+        const char *px_token = apr_strtok(NULL, "", &rest);
+        *token =  px_token;
+        return apr_atoi64(version);
     }
-    return 0;
+    return -1;
 }

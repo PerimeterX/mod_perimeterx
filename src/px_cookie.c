@@ -19,6 +19,8 @@ static const int IV_LEN = 16;
 static const int KEY_LEN = 32;
 static const int HASH_LEN = 65;
 
+static const char *signing_nofields[] = { NULL };
+
 int decode_base64(const char *s, unsigned char **o, int *len, apr_pool_t *p) {
     if (!s) {
         return -1;
@@ -83,7 +85,7 @@ risk_cookie *parse_risk_cookie(const char *raw_cookie, request_context *ctx) {
     return cookie;
 }
 
-void digest_cookie(const risk_cookie *cookie, request_context *ctx, const char *cookie_key, const char **signing_fields, int sign_fields_size, char *buffer, int buffer_len) {
+void digest_cookie(const risk_cookie *cookie, request_context *ctx, const char *cookie_key, const char **signing_fields, char *buffer, int buffer_len) {
     unsigned char hash[32];
 
     HMAC_CTX hmac;
@@ -107,8 +109,9 @@ void digest_cookie(const risk_cookie *cookie, request_context *ctx, const char *
         HMAC_Update(&hmac, cookie->vid, strlen(cookie->vid));
     }
 
-    for (int i = 0; i < sign_fields_size; i++) {
-        HMAC_Update(&hmac, signing_fields[i], strlen(signing_fields[i]));
+    while (*signing_fields) {
+        HMAC_Update(&hmac, *signing_fields, strlen(*signing_fields));
+        signing_fields++;
     }
 
     int len = buffer_len / 2;
@@ -223,13 +226,9 @@ validation_result_t validate_cookie(const risk_cookie *cookie, request_context *
     }
 
     char signature[HASH_LEN];
-    int signing_fields_count = 0;
-    const char *signing_fields[1];
-    if (ctx->token_origin == TOKEN_ORIGIN_COOKIE) {
-        signing_fields[0] = ctx->useragent;
-        signing_fields_count = 1;
-    } 
-    digest_cookie(cookie, ctx, cookie_key, signing_fields, signing_fields_count, signature, HASH_LEN);
+    const char *signing_fields_ua[] = { ctx->useragent, NULL };
+    const char **signing_fields = (ctx->token_origin == TOKEN_ORIGIN_COOKIE) ? signing_fields_ua : signing_nofields;
+    digest_cookie(cookie, ctx, cookie_key, signing_fields, signature, HASH_LEN);
 
     if (memcmp(signature, cookie->hash, 64) != 0) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_cookie: invalid signature", ctx->app_id);

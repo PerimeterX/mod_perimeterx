@@ -64,8 +64,8 @@ extern const char *BLOCK_REASON_STR[];
 extern const char *CALL_REASON_STR[];
 #endif // DEBUG
 
-int create_response(px_config *conf, request_context *ctx) {
-    size_t size;
+int create_response(px_config *conf, request_context *ctx, char **response) {
+    size_t html_size;
     char *html = NULL;
 
     // which template to use in response
@@ -75,33 +75,26 @@ int create_response(px_config *conf, request_context *ctx) {
     }
 
     // render html page with the relevant template
-    int res = render_template(template, &html, ctx, conf, &size);
+    int res = render_template(template, &html, ctx, conf, &html_size);
     if (res) {
         // failed to render
         return 1;
     }
 
     // formulate server response according to type px token
-    char *response;
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
-        int html_len = strlen(html);
-        int expected_encoded_len = apr_base64_encode_len(html_len);
+        int expected_encoded_len = apr_base64_encode_len(html_size + 1);
         char *encoded_html = apr_palloc(ctx->r->pool, expected_encoded_len);
-        int encoded_len = apr_base64_encode(encoded_html, html, html_len);
+        int encoded_len = apr_base64_encode(encoded_html, html, html_size + 1);
         free(html);
         if (encoded_html == 0) {
             return 1;
         }
-        ap_set_content_type(ctx->r, CONTENT_TYPE_JSON);
-        response = create_mobile_response(conf, ctx, encoded_html);
+        *response = create_mobile_response(conf, ctx, encoded_html);
     } else {
-        response = html;
+        *response = html;
     }
 
-    ctx->r->status = HTTP_FORBIDDEN;
-    ap_rwrite(response, strlen(response), ctx->r);
-
-    free(response);
     return 0;
 }
 
@@ -165,7 +158,14 @@ int px_handle_request(request_rec *r, px_config *conf) {
                 return HTTP_TEMPORARY_REDIRECT;
             }
 
-            if (create_response(conf, ctx) == 0) {
+            // write response
+            char *response;
+            if (create_response(conf, ctx, &response) == 0) {
+                const char *content_type = ctx->token_origin == TOKEN_ORIGIN_COOKIE ? CONTENT_TYPE_HTML : CONTENT_TYPE_JSON;
+                ap_set_content_type(ctx->r, content_type);
+                ctx->r->status = HTTP_FORBIDDEN;
+                ap_rwrite(response, strlen(response), ctx->r);
+                free(response);
                 return DONE;
             }
             // failed to create response
