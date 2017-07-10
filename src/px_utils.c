@@ -131,6 +131,7 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
 
 // returns the token version, -1 if header not found
 int extract_token_and_version_from_header(apr_pool_t *pool, apr_table_t *headers, const char **token) {
+    *token = NULL;
     const char *header_value = apr_table_get(headers, MOBILE_SDK_HEADER);
     if (header_value) {
         char *rest;
