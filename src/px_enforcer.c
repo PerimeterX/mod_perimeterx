@@ -98,7 +98,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     }
 
     // preventing reuse of captcha cookie by deleting it
-    apr_status_t res = ap_cookie_remove2(ctx->r, CAPTCHA_COOKIE, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
+    apr_status_t res = ap_cookie_remove(ctx->r, CAPTCHA_COOKIE, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
     if (res != APR_SUCCESS) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: could not remove _pxCaptcha from request", ctx->app_id);
     }
