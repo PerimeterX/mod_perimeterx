@@ -223,15 +223,6 @@ risk_response* risk_api_get(request_context *ctx, px_config *conf) {
     return NULL;
 }
 
-int populate_captcha_cookie_data(apr_pool_t *p, const char *captcha_cookie, request_context *ctx) {
-    const char *delim = ":";
-    char *saveptr;
-    char *str = apr_pstrdup(p, captcha_cookie);
-    ctx->px_captcha = apr_strtok(str, delim, &saveptr);
-    ctx->uuid = apr_strtok(NULL, delim, &saveptr);
-    ctx->vid = apr_strtok(NULL, delim, &saveptr);
-}
-
 request_context* create_context(request_rec *r, const px_config *conf) {
     request_context *ctx = (request_context*) apr_pcalloc(r->pool, sizeof(request_context));
 
@@ -250,7 +241,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
 
     const char *px_captcha_cookie = NULL;
     char *captcha_cookie = NULL;
-    apr_status_t status = ap_cookie_read(r, CAPTCHA_COOKIE, &ctx->px_captcha, 1);
+    ap_cookie_read(r, CAPTCHA_COOKIE, &ctx->px_captcha, 1);
 
     ctx->ip = get_request_ip(r, conf);
     if (!ctx->ip) {
