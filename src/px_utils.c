@@ -120,7 +120,8 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
             const char *first_ip = extract_first_ip(r->pool, ip);
             // validation ip
             in_addr_t addr;
-            if (inet_pton(AF_INET, first_ip, &addr) == 1 || inet_pton(AF_INET6, first_ip, &addr) == 1) {
+            struct in6_addr ipv6_addr;
+            if (inet_pton(AF_INET, first_ip, &addr) == 1 || inet_pton(AF_INET6, first_ip, &ipv6_addr) == 1) {
                 return first_ip;
             }
         }
