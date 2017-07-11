@@ -239,8 +239,6 @@ request_context* create_context(request_rec *r, const px_config *conf) {
         ap_cookie_read(r, PX_COOKIE, &px_token, 0);
     }
 
-    const char *px_captcha_cookie = NULL;
-    char *captcha_cookie = NULL;
     ap_cookie_read(r, CAPTCHA_COOKIE, &ctx->px_captcha, 1);
 
     ctx->ip = get_request_ip(r, conf);
