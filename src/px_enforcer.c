@@ -235,12 +235,12 @@ int populate_captcha_cookie_data(apr_pool_t *p, const char *captcha_cookie, requ
 request_context* create_context(request_rec *r, const px_config *conf) {
     request_context *ctx = (request_context*) apr_pcalloc(r->pool, sizeof(request_context));
 
-    ctx->app_id = conf->app_id;
     ctx->r = r;
+    ctx->app_id = conf->app_id;
+    ctx->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
 
     const char *px_token = NULL;
     ctx->token_origin = TOKEN_ORIGIN_COOKIE;
-    ctx->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
     int token_version = extract_token_and_version_from_header(r->pool, r->headers_in, &px_token);
     if (token_version > -1) {
         ctx->token_origin = TOKEN_ORIGIN_HEADER;
@@ -302,9 +302,6 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             return request_valid;
         } else {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] verify_captcha: validation status false, creating risk_api for this request", ctx->app_id);
-            // pxCaptcha is not valid: removing captcha cookie data
-            ctx->uuid = NULL;
-            ctx->vid = NULL;
             ctx->call_reason = CALL_REASON_CAPTCHA_FAILED;
             risk_response = risk_api_get(ctx, conf);
             goto handle_response;
