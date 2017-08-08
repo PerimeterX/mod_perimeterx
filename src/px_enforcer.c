@@ -50,6 +50,9 @@ void set_call_reason(request_context *ctx, validation_result_t vr) {
         case VALIDATION_RESULT_INVALID:
             ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
             break;
+        case VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR:
+            ctx->call_reason = CALL_REASON_MOBILE_SDK_CONNECTION_ERROR;
+            break;
         default:
             ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
             break;
@@ -244,6 +247,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
         ap_cookie_read(r, PX_COOKIE, &px_token, 0);
     }
 
+
     ap_cookie_read(r, CAPTCHA_COOKIE, &ctx->px_captcha, 1);
 
     ctx->ip = get_request_ip(r, conf);
@@ -303,8 +307,11 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
     }
 
     validation_result_t vr;
-    if (ctx->px_cookie == NULL) {
+
+    if (ctx->px_cookie == NULL || (ctx->token_origin == TOKEN_ORIGIN_HEADER && apr_strnatcmp(ctx->px_cookie, "1") == 0)) {
         vr = VALIDATION_RESULT_NULL_COOKIE;
+    } else if (ctx->token_origin == TOKEN_ORIGIN_HEADER && apr_strnatcmp(ctx->px_cookie, "2") == 0) {
+        vr = VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR;
     } else {
         risk_cookie *c = decode_cookie(ctx->px_cookie, conf->cookie_key, ctx);
         if (c) {
@@ -334,6 +341,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
         case VALIDATION_RESULT_DECRYPTION_FAILED:
         case VALIDATION_RESULT_NULL_COOKIE:
         case VALIDATION_RESULT_INVALID:
+        case VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR:
             set_call_reason(ctx, vr);
             risk_response = risk_api_get(ctx, conf);
 handle_response:

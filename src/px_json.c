@@ -27,6 +27,7 @@ static const char *CALL_REASON_STR[] = {
     [CALL_REASON_COOKIE_VALIDATION_FAILED] = "cookie_validation_failed",
     [CALL_REASON_SENSITIVE_ROUTE] = "sensitive_route",
     [CALL_REASON_CAPTCHA_FAILED] = "captcha_failed",
+    [CALL_REASON_MOBILE_SDK_CONNECTION_ERROR] = "mobile_sdk_connection_error",
 };
 
 static const char *BLOCK_REASON_STR[] = {

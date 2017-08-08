@@ -137,13 +137,15 @@ int extract_token_and_version_from_header(apr_pool_t *pool, apr_table_t *headers
     if (header_value) {
         char *rest;
         char *header_cpy = apr_pstrdup(pool, header_value);
-        const char *version = apr_strtok(header_cpy, ":", &rest);
-        if (version == NULL) {
+        const char *prefix = apr_strtok(header_cpy, ":", &rest);
+        const char *postfix = apr_strtok(NULL, "", &rest);
+        // if postfix is empty, use prefix as error number
+        if (postfix == NULL) {
+            *token = prefix;
             return 0;
         }
-        const char *px_token = apr_strtok(NULL, "", &rest);
-        *token =  px_token;
-        return apr_atoi64(version);
+        *token = postfix;
+        return apr_atoi64(prefix);
     }
     return -1;
 }
