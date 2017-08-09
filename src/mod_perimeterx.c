@@ -70,16 +70,11 @@ extern const char *CALL_REASON_STR[];
 #endif // DEBUG
 
 char* create_response(px_config *conf, request_context *ctx) {
-    char *response;
-    size_t html_size;
-    char *html = NULL;
-    
     if (conf->json_response_enabled) {
         const char *accept_header = apr_table_get(ctx->r->headers_in, ACCEPT_HEADER_NAME);       
         bool match = accept_header && strstr(accept_header, CONTENT_TYPE_JSON);
         if (match) {
-            response = create_json_response(conf, ctx);
-            return response;
+            return create_json_response(conf, ctx);
         }
     }
     
@@ -97,6 +92,8 @@ char* create_response(px_config *conf, request_context *ctx) {
     }
 
     // render html page with the relevant template
+    size_t html_size;
+    char *html = NULL;
     int res = render_template(template, &html, ctx, conf, &html_size);
     if (res) {
         // failed to render
@@ -112,12 +109,9 @@ char* create_response(px_config *conf, request_context *ctx) {
         if (encoded_html == 0) {
             return NULL;
         }
-        response = create_mobile_response(conf, ctx, encoded_html);
-    } else {
-        response = html;
+        return create_mobile_response(conf, ctx, encoded_html);
     }
-
-    return response;
+    return html;
 }
 
 int px_handle_request(request_rec *r, px_config *conf) {
