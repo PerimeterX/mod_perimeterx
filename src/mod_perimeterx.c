@@ -21,8 +21,6 @@
 #include <apr_portable.h>
 #include <apr_signal.h>
 #include <apr_base64.h>
-#include <regex.h>  
-#include <apr_strmatch.h>
 
 #include "px_utils.h"
 #include "px_types.h"
@@ -77,14 +75,8 @@ char* create_response(px_config *conf, request_context *ctx) {
     char *html = NULL;
     
     if (conf->json_response_enabled) {
-        const char *accept_header_cpy = apr_pstrdup(ctx->r->pool, (char *) apr_table_get(ctx->r->headers_in, ACCEPT_HEADER_NAME));        
-        const char *pattern_str = apr_pstrdup(ctx->r->pool, CONTENT_TYPE_JSON);
-        // compile pattern
-
-        const apr_strmatch_pattern *pattern = apr_strmatch_precompile(ctx->r->pool, pattern_str, 0); 
-        apr_size_t header_size = strlen(accept_header_cpy);
-        // match
-        const char *match = apr_strmatch(pattern, accept_header_cpy, header_size);
+        const char *accept_header = apr_table_get(ctx->r->headers_in, ACCEPT_HEADER_NAME);       
+        bool match = accept_header && strstr(accept_header, CONTENT_TYPE_JSON);
         if (match) {
             response = create_json_response(conf, ctx);
             return response;
