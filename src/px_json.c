@@ -302,11 +302,11 @@ char *create_mobile_response(px_config *cfg, request_context *ctx, const char *c
 char *create_json_response(px_config *cfg, request_context *ctx) {
     json_t *j_response = json_pack("{}");
 
-    if (cfg->vid_header_enabled && ctx->vid) {
+    if (ctx->vid) {
         json_object_set_new(j_response, "vid", json_string(ctx->vid));
     }
 
-    if (cfg->uuid_header_enabled && ctx->uuid) {
+    if (ctx->uuid) {
         json_object_set_new(j_response, "uuid", json_string(ctx->uuid));
     }
 

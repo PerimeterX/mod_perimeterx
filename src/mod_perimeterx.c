@@ -82,7 +82,7 @@ char* create_response(px_config *conf, request_context *ctx) {
         // compile pattern
 
         const apr_strmatch_pattern *pattern = apr_strmatch_precompile(ctx->r->pool, pattern_str, 0); 
-        apr_size_t header_size = strlen(pattern_str);
+        apr_size_t header_size = strlen(accept_header_cpy);
         // match
         const char *match = apr_strmatch(pattern, accept_header_cpy, header_size);
         if (match) {
