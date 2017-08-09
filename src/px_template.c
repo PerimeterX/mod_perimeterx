@@ -6,6 +6,7 @@ static const char *visible = "visible";
 static const char *hidden = "hidden";
 
 typedef struct px_props_t {
+    int depth;
     const char *appId;
     const char *refId;
     const char *vid;
@@ -45,6 +46,8 @@ static const char *get_px_props_value(const px_props *props, const char *key) {
 }
 
 static int start(void *closure) {
+    px_props *props = (px_props *)closure;
+    props->depth = 0;
     return 0;
 }
 
@@ -72,15 +75,29 @@ static int put(void *closure, const char *name, int escape, FILE *file) {
 }
 
 static int enter(void *closure, const char *name) {
-    return MUSTACH_ERROR_TOO_DEPTH;
+    px_props *props = (px_props *)closure;
+    if (++props->depth >= 255) {
+        return MUSTACH_ERROR_TOO_DEPTH;
+    }
+    if (props->depth == 1 && get_px_props_value(props, name)) {
+        return 1;
+    }
+    props->depth--;
+    return 0;
 }
 
 static int next(void *closure) {
-    return MUSTACH_ERROR_CLOSING;
+    px_props *props = (px_props *)closure;
+    return (props->depth > 0) ? 0 : 1;
 }
 
 static int leave(void *closure) {
-    return MUSTACH_ERROR_CLOSING;
+    px_props *props = (px_props *)closure;
+    if (props->depth <= 0) {
+        return MUSTACH_ERROR_CLOSING;
+    }
+    props->depth--;
+    return 0;
 }
 
 static struct mustach_itf itf = {
