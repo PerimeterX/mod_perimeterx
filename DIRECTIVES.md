@@ -25,11 +25,12 @@ Directives
 | BaseURL |  Determines PerimeterX server base URL. | https://sapi-\<app_id\>.perimeterx.net  | String |
 | ProxyURL |  Proxy URL for outgoing PerimeterX service API | NULL  | String |
 | ScoreHeader |  Enable request score to be placed on the response headers | Off  | On / Off |
-| ScoreHeaderName |  Sets the header key on the request object that holds the risk score  | X-PX-SCORE  | String | Works only when `ScoreHeader` is set to On
+| ScoreHeaderName |  Sets the header key on the response object that holds the risk score  | X-PX-SCORE  | String | Works only when `ScoreHeader` is set to On
 | VidHeader |  Enables VID to be placed on the response headers | Off  | On / Off |
-| VidHeaderName | Sets the key for the VID header on the response | X-PX-VID  | String | Works only when `VidHeader` is set to On
+| VidHeaderName | Sets the key for the VID header on the response | X-PX-VID  | String | Works only when `VidHeader` is set to On |
 | UuidHeader | Enables UUID to be placed on the response headers | Off  | On / Off |
-| UuidHeaderName | Sets the key for the UUID header on the response | X-PX-UUID  | String | Works only when `UuidHeader` is set to On
+| UuidHeaderName | Sets the key for the UUID header on the response | X-PX-UUID  | String | Works only when `UuidHeader` is set to On |
+| EnableJsonResponse | Turn on response json when accept headers are `application/json` | false  | bool | On / Off |
 #### <a name="ipheader">IPHeader Importacne</a>: 
 
 * The order of headers in the configuration matters. The first header found with a value will be taken as the IP address.

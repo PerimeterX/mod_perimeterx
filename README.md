@@ -5,6 +5,9 @@
 [PerimeterX](http://www.perimeterx.com) Apache Module
 ===========================================
 
+> Latest stable version: [v2.4.2](https://github.com/PerimeterX/mod_perimeterx/releases/tag/v2.4.2)
+
+
 Table of Contents
 -----------------
 

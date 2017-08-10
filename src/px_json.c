@@ -154,9 +154,6 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     if (ctx->px_cookie_orig) {
         json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
     }
-    if (ctx->px_cookie_orig) {
-        json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
-    }
 
     // risk api object
     json_t *j_risk = json_pack("{s:O,s:O}",
@@ -300,6 +297,22 @@ char *create_mobile_response(px_config *cfg, request_context *ctx, const char *c
     // dump as string
     char *request_str = json_dumps(j_mobile_response, JSON_COMPACT);
     json_decref(j_mobile_response);
+    return request_str;
+}
+
+char *create_json_response(px_config *cfg, request_context *ctx) {
+    json_t *j_response = json_pack("{}");
+
+    if (ctx->vid) {
+        json_object_set_new(j_response, "vid", json_string(ctx->vid));
+    }
+
+    if (ctx->uuid) {
+        json_object_set_new(j_response, "uuid", json_string(ctx->uuid));
+    }
+
+    char *request_str = json_dumps(j_response, JSON_COMPACT);
+    json_decref(j_response);
     return request_str;
 }
 

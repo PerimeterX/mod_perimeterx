@@ -232,6 +232,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->r = r;
     ctx->app_id = conf->app_id;
     ctx->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
+    ctx->response_application_json = false;
 
     const char *px_token = NULL;
     ctx->token_origin = TOKEN_ORIGIN_COOKIE;

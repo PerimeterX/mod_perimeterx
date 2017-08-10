@@ -7,6 +7,8 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
 char *create_risk_payload(const request_context *ctx, const px_config *conf);
 char *create_captcha_payload(const request_context *ctx, const px_config *conf);
 char *create_mobile_response(px_config *cfg, request_context *ctx, const char *compiled_html);
+char *create_json_response(px_config *cfg, request_context *ctx);
+
 
 captcha_response *parse_captcha_response(const char* captcha_response_str, const request_context *ctx);
 risk_response* parse_risk_response(const char* risk_response_str, const request_context *ctx);

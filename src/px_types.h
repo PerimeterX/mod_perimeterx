@@ -64,7 +64,7 @@ typedef struct px_config_t {
     bool vid_header_enabled; 
     const char *vid_header_name;
     const char *uuid_header_name;
-
+    bool json_response_enabled; 
 } px_config;
 
 typedef struct health_check_data_t {
@@ -182,6 +182,7 @@ typedef struct request_context_t {
     token_origin_t token_origin;
     action_t action;
     captcha_type_t captcha_type;
+    bool response_application_json;
 } request_context;
 
 #endif
