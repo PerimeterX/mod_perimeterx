@@ -14,6 +14,11 @@ static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
+static const char *NO_TOKEN = "1";
+static const char *MOBILE_SDK_CONNECTION_ERROR = "2";
+
+
+
 static const char* FILE_EXT_WHITELIST[] = {
     ".css", ".bmp", ".tif", ".ttf", ".docx", ".woff2", ".js", ".pict", ".tiff", ".eot", ".xlsx", ".jpg", ".csv",
     ".eps", ".woff", ".xls", ".jpeg", ".doc", ".ejs", ".otf", ".pptx", ".gif", ".pdf", ".swf", ".svg", ".ps",
@@ -309,9 +314,9 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
 
     validation_result_t vr;
 
-    if (ctx->px_cookie == NULL || (ctx->token_origin == TOKEN_ORIGIN_HEADER && apr_strnatcmp(ctx->px_cookie, "1") == 0)) {
+    if (ctx->px_cookie == NULL || (ctx->token_origin == TOKEN_ORIGIN_HEADER && strcmp(ctx->px_cookie, NO_TOKEN) == 0)) {
         vr = VALIDATION_RESULT_NULL_COOKIE;
-    } else if (ctx->token_origin == TOKEN_ORIGIN_HEADER && apr_strnatcmp(ctx->px_cookie, "2") == 0) {
+    } else if (ctx->token_origin == TOKEN_ORIGIN_HEADER && apr_strnatcmp(ctx->px_cookie, MOBILE_SDK_CONNECTION_ERROR) == 0) {
         vr = VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR;
     } else {
         risk_cookie *c = decode_cookie(ctx->px_cookie, conf->cookie_key, ctx);
