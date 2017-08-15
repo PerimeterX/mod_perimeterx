@@ -4,12 +4,12 @@
 #include <http_log.h>
 #include <util_cookies.h>
 
-#include "px_cookie.h"
+#include "px_payload.h"
 #include "px_json.h"
 #include "px_utils.h"
 #include "curl_pool.h"
 
-static const char *PX_COOKIE = "_px";
+static const char *PX_PAYLOAD_COOKIE_PREFIX = "_px";
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
@@ -43,23 +43,23 @@ static CURLcode post_request(const char *url, const char *payload, long timeout,
 
 void set_call_reason(request_context *ctx, validation_result_t vr) {
     switch (vr) {
-        case VALIDATION_RESULT_NULL_COOKIE:
-            ctx->call_reason = CALL_REASON_NO_COOKIE;
+        case VALIDATION_RESULT_NULL_PAYLOAD:
+            ctx->call_reason = CALL_REASON_NO_PAYLOAD;
             break;
         case VALIDATION_RESULT_EXPIRED:
-            ctx->call_reason = CALL_REASON_EXPIRED_COOKIE;
+            ctx->call_reason = CALL_REASON_EXPIRED_PAYLOAD;
             break;
         case VALIDATION_RESULT_DECRYPTION_FAILED:
-            ctx->call_reason = CALL_REASON_COOKIE_DECRYPTION_FAILED;
+            ctx->call_reason = CALL_REASON_PAYLOAD_DECRYPTION_FAILED;
             break;
         case VALIDATION_RESULT_INVALID:
-            ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
+            ctx->call_reason = CALL_REASON_PAYLOAD_VALIDATION_FAILED;
             break;
         case VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR:
             ctx->call_reason = CALL_REASON_MOBILE_SDK_CONNECTION_ERROR;
             break;
         default:
-            ctx->call_reason = CALL_REASON_COOKIE_VALIDATION_FAILED;
+            ctx->call_reason = CALL_REASON_PAYLOAD_VALIDATION_FAILED;
             break;
     }
 }
@@ -239,18 +239,18 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
     ctx->response_application_json = false;
 
-    const char *px_token = NULL;
+    const char *px_payload = NULL;
     ctx->token_origin = TOKEN_ORIGIN_COOKIE;
 
     if (conf->enable_token_via_header) {
-        int token_version = extract_token_and_version_from_header(r->pool, r->headers_in, &px_token);
-        if (token_version > -1) {
+        int payload_prefix = extract_payload_from_header(r->pool, r->headers_in, &px_payload);
+        if (payload_prefix > -1) {
             ctx->token_origin = TOKEN_ORIGIN_HEADER;
         } else {
-            ap_cookie_read(r, PX_COOKIE, &px_token, 0);
+            ap_cookie_read(r, PX_PAYLOAD_COOKIE_PREFIX, &px_payload, 0);
         }
     } else {
-        ap_cookie_read(r, PX_COOKIE, &px_token, 0);
+        ap_cookie_read(r, PX_PAYLOAD_COOKIE_PREFIX, &px_payload, 0);
     }
 
 
@@ -261,7 +261,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: request IP is NULL", conf->app_id);
     }
 
-    ctx->px_cookie = apr_pstrdup(r->pool, px_token);
+    ctx->px_payload = apr_pstrdup(r->pool, px_payload);
     ctx->uri = r->unparsed_uri;
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
@@ -284,7 +284,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->pass_reason = PASS_REASON_NONE; // initial value, should always get changed if request passes
     ctx->block_enabled = enable_block_for_hostname(r, conf->enabled_hostnames);
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: useragent: (%s), px_cookie: (%s), full_url: (%s), hostname: (%s) , http_method: (%s), http_version: (%s), uri: (%s), ip: (%s), block_enabled: (%d)", conf->app_id, ctx->useragent, ctx->px_cookie, ctx->full_url, ctx->hostname, ctx->http_method, ctx->http_version, ctx->uri, ctx->ip, ctx->block_enabled);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: useragent: (%s), px_payload: (%s), full_url: (%s), hostname: (%s) , http_method: (%s), http_version: (%s), uri: (%s), ip: (%s), block_enabled: (%d)", conf->app_id, ctx->useragent, ctx->px_payload, ctx->full_url, ctx->hostname, ctx->http_method, ctx->http_version, ctx->uri, ctx->ip, ctx->block_enabled);
 
     return ctx;
 }
@@ -298,7 +298,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
         if (verify_captcha(ctx, conf)) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] verify_captcha: validation status true", ctx->app_id);
             // clean users cookie on captcha verification
-            apr_status_t res = ap_cookie_remove2(ctx->r, PX_COOKIE, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
+            apr_status_t res = ap_cookie_remove2(ctx->r, PX_PAYLOAD_COOKIE_PREFIX, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
             if (res != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] could not remove _px from request", ctx->app_id);
             }
@@ -314,19 +314,19 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
 
     validation_result_t vr;
 
-    if (ctx->px_cookie == NULL || (ctx->token_origin == TOKEN_ORIGIN_HEADER && strcmp(ctx->px_cookie, NO_TOKEN) == 0)) {
-        vr = VALIDATION_RESULT_NULL_COOKIE;
-    } else if (ctx->token_origin == TOKEN_ORIGIN_HEADER && apr_strnatcmp(ctx->px_cookie, MOBILE_SDK_CONNECTION_ERROR) == 0) {
+    if (ctx->px_payload == NULL || (ctx->token_origin == TOKEN_ORIGIN_HEADER && strcmp(ctx->px_payload, NO_TOKEN) == 0)) {
+        vr = VALIDATION_RESULT_NULL_PAYLOAD;
+    } else if (ctx->token_origin == TOKEN_ORIGIN_HEADER && strcmp(ctx->px_payload, MOBILE_SDK_CONNECTION_ERROR) == 0) {
         vr = VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR;
     } else {
-        risk_cookie *c = decode_cookie(ctx->px_cookie, conf->cookie_key, ctx);
+        risk_payload *c = decode_payload(ctx->px_payload, conf->payload_key, ctx);
         if (c) {
             ctx->score = c->b_val;
             ctx->vid = c->vid;
             ctx->uuid = c->uuid;
-            vr = validate_cookie(c, ctx, conf->cookie_key);
+            vr = validate_payload(c, ctx, conf->payload_key);
         } else {
-            ctx->px_cookie_orig = ctx->px_cookie;
+            ctx->px_payload_orig = ctx->px_payload;
             vr = VALIDATION_RESULT_DECRYPTION_FAILED;
         }
     }
@@ -334,18 +334,18 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
         case VALIDATION_RESULT_VALID:
             request_valid = ctx->score < conf->blocking_score;
             if (!request_valid) {
-                ctx->block_reason = BLOCK_REASON_COOKIE;
+                ctx->block_reason = BLOCK_REASON_PAYLOAD;
             } else if (is_sensitive_route_prefix(ctx->r, conf ) || is_sensitive_route(ctx->r, conf)) {
                 ctx->call_reason = CALL_REASON_SENSITIVE_ROUTE;
                 risk_response = risk_api_get(ctx, conf);
                 goto handle_response;
             } else {
-                ctx->pass_reason = PASS_REASON_COOKIE;
+                ctx->pass_reason = PASS_REASON_PAYLOAD;
             }
             break;
         case VALIDATION_RESULT_EXPIRED:
         case VALIDATION_RESULT_DECRYPTION_FAILED:
-        case VALIDATION_RESULT_NULL_COOKIE:
+        case VALIDATION_RESULT_NULL_PAYLOAD:
         case VALIDATION_RESULT_INVALID:
         case VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR:
             set_call_reason(ctx, vr);

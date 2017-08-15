@@ -11,7 +11,7 @@
 
 typedef struct px_config_t {
     const char *app_id;
-    const char *cookie_key;
+    const char *payload_key;
     const char *auth_token;
     const char *block_page_url;
     const char *base_url;
@@ -83,16 +83,16 @@ typedef enum {
     VALIDATION_RESULT_EXPIRED,
     VALIDATION_RESULT_INVALID,
     VALIDATION_RESULT_DECRYPTION_FAILED,
-    VALIDATION_RESULT_NULL_COOKIE,
+    VALIDATION_RESULT_NULL_PAYLOAD,
     VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR,
 } validation_result_t;
 
 typedef enum call_reason_t {
     CALL_REASON_NONE,
-    CALL_REASON_NO_COOKIE,
-    CALL_REASON_EXPIRED_COOKIE,
-    CALL_REASON_COOKIE_DECRYPTION_FAILED,
-    CALL_REASON_COOKIE_VALIDATION_FAILED,
+    CALL_REASON_NO_PAYLOAD,
+    CALL_REASON_EXPIRED_PAYLOAD,
+    CALL_REASON_PAYLOAD_DECRYPTION_FAILED,
+    CALL_REASON_PAYLOAD_VALIDATION_FAILED,
     CALL_REASON_SENSITIVE_ROUTE,
     CALL_REASON_CAPTCHA_FAILED,
     CALL_REASON_MOBILE_SDK_CONNECTION_ERROR,
@@ -100,7 +100,7 @@ typedef enum call_reason_t {
 
 typedef enum {
     PASS_REASON_NONE,
-    PASS_REASON_COOKIE,
+    PASS_REASON_PAYLOAD,
     PASS_REASON_TIMEOUT,
     PASS_REASON_S2S,
     PASS_REASON_S2S_TIMEOUT,
@@ -111,7 +111,7 @@ typedef enum {
 
 typedef enum {
     BLOCK_REASON_NONE,
-    BLOCK_REASON_COOKIE,
+    BLOCK_REASON_PAYLOAD,
     BLOCK_REASON_SERVER,
 } block_reason_t;
 
@@ -129,7 +129,7 @@ typedef enum {
     CAPTCHA_TYPE_RECAPTCHA
 } captcha_type_t;
 
-typedef struct risk_cookie_t {
+typedef struct risk_payload_t {
     const char *timestamp;
     long long ts;
     const char *hash;
@@ -139,7 +139,7 @@ typedef struct risk_cookie_t {
     const char *b;
     int a_val;
     int b_val;
-} risk_cookie;
+} risk_payload;
 
 typedef struct risk_response_t {
     const char *uuid;
@@ -157,8 +157,8 @@ typedef struct captcha_response_t {
 
 typedef struct request_context_t {
     const char *app_id;
-    const char *px_cookie;
-    const char *px_cookie_decrypted;
+    const char *px_payload;
+    const char *px_payload_decrypted;
     const char *px_captcha;
     const char *ip;
     const char *vid;
@@ -170,7 +170,7 @@ typedef struct request_context_t {
     const char *full_url;
     const char *http_method;
     const char *http_version;
-    const char *px_cookie_orig;
+    const char *px_payload_orig;
     int score;
     block_reason_t block_reason;
     call_reason_t call_reason;

@@ -1,7 +1,7 @@
 BUILDDIR=/usr/build
 MODSDIR=/usr/modules
 
-SOURCES=mod_perimeterx.c curl_pool.c mustach.c px_cookie.c px_enforcer.c px_json.c px_template.c px_utils.c
+SOURCES=mod_perimeterx.c curl_pool.c mustach.c px_payload.c px_enforcer.c px_json.c px_template.c px_utils.c
 
 all: build
 

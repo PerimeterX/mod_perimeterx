@@ -10,7 +10,7 @@ static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
 static const char *PASS_REASON_STR[] = {
     [PASS_REASON_NONE] = "none",
-    [PASS_REASON_COOKIE] = "cookie",
+    [PASS_REASON_PAYLOAD] = "cookie",
     [PASS_REASON_TIMEOUT] = "timeout",
     [PASS_REASON_S2S] = "s2s",
     [PASS_REASON_S2S_TIMEOUT] = "s2s_timeout",
@@ -21,10 +21,10 @@ static const char *PASS_REASON_STR[] = {
 
 static const char *CALL_REASON_STR[] = {
     [CALL_REASON_NONE] = "none",
-    [CALL_REASON_NO_COOKIE] = "no_cookie",
-    [CALL_REASON_EXPIRED_COOKIE] = "cookie_expired",
-    [CALL_REASON_COOKIE_DECRYPTION_FAILED] = "cookie_decryption_failed",
-    [CALL_REASON_COOKIE_VALIDATION_FAILED] = "cookie_validation_failed",
+    [CALL_REASON_NO_PAYLOAD] = "no_cookie",
+    [CALL_REASON_EXPIRED_PAYLOAD] = "cookie_expired",
+    [CALL_REASON_PAYLOAD_DECRYPTION_FAILED] = "cookie_decryption_failed",
+    [CALL_REASON_PAYLOAD_VALIDATION_FAILED] = "cookie_validation_failed",
     [CALL_REASON_SENSITIVE_ROUTE] = "sensitive_route",
     [CALL_REASON_CAPTCHA_FAILED] = "captcha_failed",
     [CALL_REASON_MOBILE_SDK_CONNECTION_ERROR] = "mobile_sdk_connection_error",
@@ -32,7 +32,7 @@ static const char *CALL_REASON_STR[] = {
 
 static const char *BLOCK_REASON_STR[] = {
     [BLOCK_REASON_NONE] = "none",
-    [BLOCK_REASON_COOKIE] = "cookie_high_score",
+    [BLOCK_REASON_PAYLOAD] = "cookie_high_score",
     [BLOCK_REASON_SERVER] = "s2s_high_score",
 };
 
@@ -65,8 +65,8 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         json_object_set_new(details, "block_uuid", json_string(ctx->uuid));
     } else {
         // adding decrypted cookie to page_requested activity
-        if (ctx->px_cookie) {
-            json_object_set_new(details, "px_cookie", json_string(ctx->px_cookie_decrypted));
+        if (ctx->px_payload) {
+            json_object_set_new(details, "px_cookie", json_string(ctx->px_payload_decrypted));
         }
 
         if (ctx->api_rtt) {
@@ -148,11 +148,11 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
             "module_version", conf->module_version,
             "cookie_origin", TOKEN_ORIGIN_STR[ctx->token_origin]);
 
-    if (ctx->px_cookie) {
-        json_object_set_new(j_additional, "px_cookie", json_string(ctx->px_cookie_decrypted));
+    if (ctx->px_payload) {
+        json_object_set_new(j_additional, "px_cookie", json_string(ctx->px_payload_decrypted));
     }
-    if (ctx->px_cookie_orig) {
-        json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_cookie_orig));
+    if (ctx->px_payload_orig) {
+        json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_payload_orig));
     }
 
     // risk api object
@@ -319,7 +319,7 @@ char *create_json_response(px_config *cfg, request_context *ctx) {
 #ifdef DEBUG
 const char* context_to_json_string(request_context *ctx) {
     json_error_t error;
-    json_t *px_cookies, *headers, *ctx_json;
+    json_t *px_payloads, *headers, *ctx_json;
 
     // format headers as key:value in JSON
     headers = json_object();
@@ -360,12 +360,12 @@ const char* context_to_json_string(request_context *ctx) {
     if (ctx->uuid) {
         json_object_set_new(ctx_json, "uuid", json_string(ctx->uuid));
     }
-    if (ctx->px_cookie) {
-        json_t *px_cookies = json_pack("{ ss }", "v1", ctx->px_cookie);
-        json_object_set_new(ctx_json, "px_cookies", px_cookies);
+    if (ctx->px_payload) {
+        json_t *px_payloads = json_pack("{ ss }", "v1", ctx->px_payload);
+        json_object_set_new(ctx_json, "px_cookies", px_payloads);
     }
-    if (ctx->px_cookie_decrypted) {
-        json_object_set_new(ctx_json, "decoded_px_cookie", json_string(ctx->px_cookie_decrypted));
+    if (ctx->px_payload_decrypted) {
+        json_object_set_new(ctx_json, "decoded_px_cookie", json_string(ctx->px_payload_decrypted));
     }
     if (ctx->px_captcha) {
         json_object_set_new(ctx_json, "px_captcha", json_string(ctx->px_captcha));
@@ -373,7 +373,7 @@ const char* context_to_json_string(request_context *ctx) {
 
     const char *context_str = json_dumps(ctx_json, JSON_ENCODE_ANY);
     json_decref(ctx_json);
-    json_decref(px_cookies);
+    json_decref(px_payloads);
 
     return context_str;
 }
