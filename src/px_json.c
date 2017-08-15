@@ -8,6 +8,7 @@
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 
+// using cookie as value instead of payload, changing it will effect the collector 
 static const char *PASS_REASON_STR[] = {
     [PASS_REASON_NONE] = "none",
     [PASS_REASON_PAYLOAD] = "cookie",
@@ -19,6 +20,7 @@ static const char *PASS_REASON_STR[] = {
     [PASS_REASON_ERROR] = "error",
 };
 
+// using cookie as value instead of payload, changing it will effect the collector 
 static const char *CALL_REASON_STR[] = {
     [CALL_REASON_NONE] = "none",
     [CALL_REASON_NO_PAYLOAD] = "no_cookie",
@@ -30,6 +32,7 @@ static const char *CALL_REASON_STR[] = {
     [CALL_REASON_MOBILE_SDK_CONNECTION_ERROR] = "mobile_sdk_connection_error",
 };
 
+// using cookie as value instead of payload, changing it will effect the collector 
 static const char *BLOCK_REASON_STR[] = {
     [BLOCK_REASON_NONE] = "none",
     [BLOCK_REASON_PAYLOAD] = "cookie_high_score",
@@ -64,7 +67,7 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
     if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 && ctx->uuid) {
         json_object_set_new(details, "block_uuid", json_string(ctx->uuid));
     } else {
-        // adding decrypted cookie to page_requested activity
+        // adding decrypted payload to page_requested activity
         if (ctx->px_payload) {
             json_object_set_new(details, "px_cookie", json_string(ctx->px_payload_decrypted));
         }
