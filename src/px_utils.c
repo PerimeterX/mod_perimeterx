@@ -139,7 +139,7 @@ int extract_payload_from_header(apr_pool_t *pool, apr_table_t *headers, const ch
         char *header_cpy = apr_pstrdup(pool, header_value);
         const char *prefix = apr_strtok(header_cpy, ":", &rest);
         const char *postfix = apr_strtok(NULL, "", &rest);
-        // if postfix is empty, use prefix as error number
+        // if postfix is empty, use prefix as payload number, in this case version will be 0
         if (postfix == NULL) {
             *payload = prefix;
             return 0;
