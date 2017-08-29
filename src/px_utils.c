@@ -18,9 +18,9 @@ void update_and_notify_health_check(px_config *conf, server_rec *server) {
     if (!conf->px_health_check) {
         return;
     }
-    apr_atomic_inc32(&conf->px_errors_count);
+    apr_uint32_t old_value = apr_atomic_inc32(&conf->px_errors_count);
     apr_thread_mutex_lock(conf->health_check_cond_mutex);
-    if (conf->px_errors_count >= conf->px_errors_threshold) {
+    if (old_value >= conf->px_errors_threshold) {
         apr_thread_cond_signal(conf->health_check_cond);
     }
     apr_thread_mutex_unlock(conf->health_check_cond_mutex);
