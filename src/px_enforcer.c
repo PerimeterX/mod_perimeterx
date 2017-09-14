@@ -25,7 +25,11 @@ static const char* FILE_EXT_WHITELIST[] = {
     ".ico", ".pls", ".midi", ".svgz", ".class", ".png", ".ppt", ".mid", "webp", ".jar"
 };
 
-void set_call_reason(request_context *ctx, validation_result_t vr) {
+static action_t parseBlockAction(const char* act) {
+    return (act && act[0] == 'b') ? ACTION_BLOCK : ACTION_CAPTCHA;
+}
+
+static void set_call_reason(request_context *ctx, validation_result_t vr) {
     switch (vr) {
         case VALIDATION_RESULT_NULL_PAYLOAD:
             ctx->call_reason = CALL_REASON_NO_PAYLOAD;
@@ -306,6 +310,7 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             ctx->vid = c->vid;
             ctx->uuid = c->uuid;
             ctx->action = (c->action && c->action[0] == 'b') ? ACTION_BLOCK : ACTION_CAPTCHA;
+            ctx->action = parseBlockAction(c->action);
             vr = validate_payload(c, ctx, conf->payload_key);
         } else {
             ctx->px_payload_orig = ctx->px_payload;
