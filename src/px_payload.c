@@ -195,7 +195,11 @@ static void digest_payload3(const risk_payload *payload, request_context *ctx, c
     HMAC_CTX hmac;
     HMAC_CTX_init(&hmac);
     HMAC_Init_ex(&hmac, payload_key, strlen(payload_key), EVP_sha256(), NULL);
-    HMAC_Update(&hmac, ctx->px_payload + 33, strlen(ctx->px_payload + 33));
+    const char *d = strchr(ctx->px_payload, ':');
+    if (d) {
+        d += 1; // point after :
+        HMAC_Update(&hmac, d, strlen(d));
+    }
     while (*signing_fields) {
         HMAC_Update(&hmac, *signing_fields, strlen(*signing_fields));
         signing_fields++;
