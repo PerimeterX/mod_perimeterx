@@ -213,16 +213,13 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     const char *px_payload1 = NULL;
     const char *px_payload3 = NULL;
     ctx->token_origin = TOKEN_ORIGIN_COOKIE;
-
     if (conf->enable_token_via_header) {
         int payload_prefix = extract_payload_from_header(r->pool, r->headers_in, &px_payload3, &px_payload1);
         if (payload_prefix > -1) {
             ctx->token_origin = TOKEN_ORIGIN_HEADER;
-        } else {
-            ap_cookie_read(r, PX_PAYLOAD_COOKIE_V3_PREFIX, &px_payload3, 0);
-            ap_cookie_read(r, PX_PAYLOAD_COOKIE_V1_PREFIX, &px_payload1, 0);
         }
-    } else {
+    }
+    if (ctx->token_origin == TOKEN_ORIGIN_COOKIE) {
         ap_cookie_read(r, PX_PAYLOAD_COOKIE_V3_PREFIX, &px_payload3, 0);
         ap_cookie_read(r, PX_PAYLOAD_COOKIE_V1_PREFIX, &px_payload1, 0);
     }
