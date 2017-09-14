@@ -25,8 +25,6 @@ static const int HASH_LEN = 65;
 
 static const char *signing_nofields[] = { NULL };
 
-static const char *DEFAULT_BLOCK_ACTION = "c";
-
 int decode_base64(const char *s, unsigned char **o, int *len, apr_pool_t *p) {
     if (!s) {
         return -1;

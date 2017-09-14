@@ -244,7 +244,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
     ctx->useragent = apr_table_get(r->headers_in, "User-Agent");
-    ctx->action = ACTION_CAPTCHA; //default action is captcha
+    ctx->action = conf->captcha_enabled ? ACTION_CAPTCHA : ACTION_BLOCK;
     // TODO(barak): full_url is missing the protocol like http:// or https://
     ctx->full_url = apr_pstrcat(r->pool, r->hostname, r->unparsed_uri, NULL);
 
@@ -306,7 +306,6 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
             ctx->score = c->score;
             ctx->vid = c->vid;
             ctx->uuid = c->uuid;
-            ctx->action = (c->action && c->action[0] == 'b') ? ACTION_BLOCK : ACTION_CAPTCHA;
             ctx->action = parseBlockAction(c->action);
             vr = validate_payload(c, ctx, conf->payload_key);
         } else {
@@ -341,7 +340,7 @@ handle_response:
                 }
 
                 if (risk_response->action) {
-                    ctx->action = (risk_response->action && risk_response->action[0] == 'b') ? ACTION_BLOCK : ACTION_CAPTCHA;
+                    ctx->action = parseBlockAction(risk_response->action);
                 }
 
                 request_valid = ctx->score < conf->blocking_score;
