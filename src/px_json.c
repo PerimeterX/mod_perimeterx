@@ -154,7 +154,7 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     const char *module_mode = conf->monitor_mode ? MONITOR_MODE : ACTIVE_BLOCKING_MODE;
 
     // additional object
-    json_t *j_additional = json_pack("{s:s, s:s, s:s, s:s, s:s}",
+    json_t *j_additional = json_pack("{s:s, s:s, s:s, s:s, s:s, s:s}",
             "s2s_call_reason", CALL_REASON_STR[ctx->call_reason],
             "http_method", ctx->http_method,
             "http_version", ctx->http_version,
@@ -167,6 +167,10 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     }
     if (ctx->px_payload_orig) {
         json_object_set_new(j_additional, "px_cookie_orig", json_string(ctx->px_payload_orig));
+    }
+
+    if (ctx->px_payload_hmac) { 
+        json_object_set_new(j_additional, "px_cookie_hmac", json_string(ctx->px_payload_hmac));
     }
 
     // risk api object

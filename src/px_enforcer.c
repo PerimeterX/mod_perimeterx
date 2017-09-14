@@ -247,7 +247,7 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
     ctx->useragent = apr_table_get(r->headers_in, "User-Agent");
-    ctx->action = conf->captcha_enabled ? ACTION_CAPTCHA : ACTION_BLOCK;
+    ctx->action = ACTION_CAPTCHA; //default action is captcha
     // TODO(barak): full_url is missing the protocol like http:// or https://
     ctx->full_url = apr_pstrcat(r->pool, r->hostname, r->unparsed_uri, NULL);
 
@@ -342,6 +342,11 @@ handle_response:
                 if (!ctx->uuid && risk_response->uuid) {
                     ctx->uuid = risk_response->uuid;
                 }
+
+                if (risk_response->action) {
+                    ctx->action = (risk_response->action && risk_response->action[0] == 'b') ? ACTION_BLOCK : ACTION_CAPTCHA;
+                }
+
                 request_valid = ctx->score < conf->blocking_score;
                 if (!request_valid) {
                     ctx->block_reason = BLOCK_REASON_SERVER;
