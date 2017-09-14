@@ -25,6 +25,8 @@ static const int HASH_LEN = 65;
 
 static const char *signing_nofields[] = { NULL };
 
+static const char *DEFAULT_BLOCK_ACTION = "c";
+
 int decode_base64(const char *s, unsigned char **o, int *len, apr_pool_t *p) {
     if (!s) {
         return -1;
@@ -41,11 +43,54 @@ int decode_base64(const char *s, unsigned char **o, int *len, apr_pool_t *p) {
     return 0;
 }
 
-risk_payload *parse_risk_payload(const char *raw_payload, request_context *ctx) {
+static risk_payload *parse_risk_payload3(const char *raw_payload, request_context *ctx) {
     json_error_t error;
     json_t *j_payload = json_loads(raw_payload, 0, &error);
     if (!j_payload) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data: parse failed with error. raw_payload (%s), text (%s)", ctx->app_id, raw_payload, error.text);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): parse failed with error. raw_payload (%s), text (%s)", ctx->app_id, raw_payload, error.text);
+        return NULL;
+    }
+
+    int score;
+    char *uuid, *vid, *action;
+    json_int_t ts;
+    if (json_unpack(j_payload, "{s:s,s:s,s:i,s:I,s:s}",
+                "v", &vid,
+                "u", &uuid,
+                "s", &score,
+                "t", &ts,
+                "a", &action)) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): unpack json failed. raw_payload: (%s)", ctx->app_id, raw_payload);
+        json_decref(j_payload);
+        return NULL;
+    }
+
+    risk_payload *payload = (risk_payload*)apr_palloc(ctx->r->pool, sizeof(risk_payload));
+    if (!payload) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): failed to allocate risk payload struct. raw_payload: (%s)", ctx->app_id, raw_payload);
+        json_decref(j_payload);
+        return NULL;
+    }
+
+    char buf[30] = {0};
+    snprintf(buf, sizeof(buf), "%"JSON_INTEGER_FORMAT, ts);
+    payload->timestamp = apr_pstrdup(ctx->r->pool, buf);
+    payload->ts = ts;
+    payload->uuid = apr_pstrdup(ctx->r->pool, uuid);
+    payload->vid = apr_pstrdup(ctx->r->pool, vid);
+    payload->score = score;
+    payload->action = apr_pstrdup(ctx->r->pool, action);
+
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): timestamp %s, vid %s, uuid %s, score %d, action %s", ctx->app_id, payload->timestamp, payload->vid, payload->uuid, payload->score, payload->action);
+    json_decref(j_payload);
+    return payload;
+}
+
+static risk_payload *parse_risk_payload1(const char *raw_payload, request_context *ctx) {
+    json_error_t error;
+    json_t *j_payload = json_loads(raw_payload, 0, &error);
+    if (!j_payload) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): parse v1 failed with error. raw_payload (%s), text (%s)", ctx->app_id, raw_payload, error.text);
         return NULL;
     }
 
@@ -60,14 +105,14 @@ risk_payload *parse_risk_payload(const char *raw_payload, request_context *ctx) 
                 "b", &b_val,
                 "t", &ts,
                 "h", &hash)) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data: unpack json failed. raw_payload: (%s)", ctx->app_id, raw_payload);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): unpack json failed. raw_payload: (%s)", ctx->app_id, raw_payload);
         json_decref(j_payload);
         return NULL;
     }
 
     risk_payload *payload = (risk_payload*)apr_palloc(ctx->r->pool, sizeof(risk_payload));
     if (!payload) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data: failed to allocate risk payload struct. raw_payload: (%s)", ctx->app_id, raw_payload);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): failed to allocate risk payload struct. raw_payload: (%s)", ctx->app_id, raw_payload);
         json_decref(j_payload);
         return NULL;
     }
@@ -83,13 +128,30 @@ risk_payload *parse_risk_payload(const char *raw_payload, request_context *ctx) 
     payload->b_val = b_val;
     payload->a = apr_psprintf(ctx->r->pool, "%d", a_val);
     payload->b = apr_psprintf(ctx->r->pool, "%d", b_val);
+    payload->action = ACTION_CAPTCHA;
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data: timestamp %s, vid %s, uuid %s hash %s scores: a %s b %s", ctx->app_id, payload->timestamp, payload->vid, payload->uuid, payload->hash, payload->a, payload->b);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): timestamp %s, vid %s, uuid %s hash %s scores: a %s b %s", ctx->app_id, payload->timestamp, payload->vid, payload->uuid, payload->hash, payload->a, payload->b);
     json_decref(j_payload);
     return payload;
 }
 
-void digest_payload(const risk_payload*payload, request_context *ctx, const char *payload_key, const char **signing_fields, char *buffer, int buffer_len) {
+risk_payload *parse_risk_payload(const char *raw_payload, request_context *ctx) {
+    risk_payload *rp = NULL;
+    switch (ctx->px_payload_version) {
+        case 1:
+            rp = parse_risk_payload1(raw_payload, ctx);
+            if (rp) {
+                ctx->px_payload_hmac = rp->hash;
+            }
+            break;
+        case 3:
+            rp = parse_risk_payload3(raw_payload, ctx);
+            break;
+    }
+    return rp;
+}
+
+static void digest_payload1(const risk_payload*payload, request_context *ctx, const char *payload_key, const char **signing_fields, char *buffer, int buffer_len) {
     unsigned char hash[32];
 
     HMAC_CTX hmac;
@@ -127,11 +189,46 @@ void digest_payload(const risk_payload*payload, request_context *ctx, const char
     }
 }
 
+static void digest_payload3(const risk_payload *payload, request_context *ctx, const char *payload_key, const char **signing_fields, char *buffer, int buffer_len) {
+    unsigned char hash[32];
+
+    HMAC_CTX hmac;
+    HMAC_CTX_init(&hmac);
+    HMAC_Init_ex(&hmac, payload_key, strlen(payload_key), EVP_sha256(), NULL);
+    HMAC_Update(&hmac, ctx->px_payload + 33, strlen(ctx->px_payload + 33));
+    while (*signing_fields) {
+        HMAC_Update(&hmac, *signing_fields, strlen(*signing_fields));
+        signing_fields++;
+    }
+
+    int len = buffer_len / 2;
+    HMAC_Final(&hmac, hash, &len);
+    HMAC_CTX_cleanup(&hmac);
+    for (int i = 0; i < len; i++) {
+        sprintf(buffer + (i * 2), "%02x", hash[i]);
+    }
+}
+
+void digest_payload(const risk_payload *payload, request_context *ctx, const char *payload_key, const char **signing_fields, char *buffer, int buffer_len) {
+    if (ctx->px_payload_version == 3) {
+        return digest_payload3(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
+    }
+    return digest_payload1(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
+}
+
 risk_payload *decode_payload(const char *px_payload, const char *payload_key, request_context *r_ctx) {
     char *px_payload_cpy = apr_pstrdup(r_ctx->r->pool, px_payload);
-    // parse payload
     char* saveptr;
     const char* delimieter = ":";
+    // extract hmac from payload for v3
+    if (r_ctx->px_payload_version == 3) {
+        const char *payload_hmac = strtok_r(px_payload_cpy, delimieter, &saveptr);
+        if (payload_hmac == NULL) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: stoping payload decryption: no valid hmac for v3", r_ctx->app_id);
+            return NULL;
+        }
+        r_ctx->px_payload_hmac = apr_pstrdup(r_ctx->r->pool, payload_hmac);
+    }
     const char* encoded_salt = strtok_r(px_payload_cpy, delimieter, &saveptr);
     if (encoded_salt == NULL) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: stoping payload decryption: no valid salt in payload", r_ctx->app_id);
@@ -197,16 +294,14 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
         EVP_CIPHER_CTX_free(ctx);
         return NULL;
     }
+    EVP_CIPHER_CTX_free(ctx);
 
     dpayload_len += len;
     dpayload[dpayload_len] = '\0';
+    r_ctx->px_payload_decrypted = dpayload;
 
     // parse payload string to risk struct
     risk_payload *c = parse_risk_payload((const char*)dpayload, r_ctx);
-    r_ctx->px_payload_decrypted = dpayload;
-
-    // clean memory
-    EVP_CIPHER_CTX_free(ctx);
     return c;
 }
 

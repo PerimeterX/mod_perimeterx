@@ -12,7 +12,8 @@
 APLOG_USE_MODULE(perimeterx);
 #endif
 
-static const char *PX_PAYLOAD_COOKIE_PREFIX = "_px";
+static const char *PX_PAYLOAD_COOKIE_V1_PREFIX = "_px";
+static const char *PX_PAYLOAD_COOKIE_V3_PREFIX = "_px3";
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 
 static const char *NO_TOKEN = "1";
@@ -205,20 +206,22 @@ request_context* create_context(request_rec *r, const px_config *conf) {
     ctx->app_id = conf->app_id;
     ctx->response_application_json = false;
 
-    const char *px_payload = NULL;
+    const char *px_payload1 = NULL;
+    const char *px_payload3 = NULL;
     ctx->token_origin = TOKEN_ORIGIN_COOKIE;
 
     if (conf->enable_token_via_header) {
-        int payload_prefix = extract_payload_from_header(r->pool, r->headers_in, &px_payload);
+        int payload_prefix = extract_payload_from_header(r->pool, r->headers_in, &px_payload3, &px_payload1);
         if (payload_prefix > -1) {
             ctx->token_origin = TOKEN_ORIGIN_HEADER;
         } else {
-            ap_cookie_read(r, PX_PAYLOAD_COOKIE_PREFIX, &px_payload, 0);
+            ap_cookie_read(r, PX_PAYLOAD_COOKIE_V3_PREFIX, &px_payload3, 0);
+            ap_cookie_read(r, PX_PAYLOAD_COOKIE_V1_PREFIX, &px_payload1, 0);
         }
     } else {
-        ap_cookie_read(r, PX_PAYLOAD_COOKIE_PREFIX, &px_payload, 0);
+        ap_cookie_read(r, PX_PAYLOAD_COOKIE_V3_PREFIX, &px_payload3, 0);
+        ap_cookie_read(r, PX_PAYLOAD_COOKIE_V1_PREFIX, &px_payload1, 0);
     }
-
 
     ap_cookie_read(r, CAPTCHA_COOKIE, &ctx->px_captcha, 1);
 
@@ -227,7 +230,15 @@ request_context* create_context(request_rec *r, const px_config *conf) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: create_context: request IP is NULL", conf->app_id);
     }
 
-    ctx->px_payload = apr_pstrdup(r->pool, px_payload);
+    ctx->px_payload1 = apr_pstrdup(r->pool, px_payload1);
+    ctx->px_payload3 = apr_pstrdup(r->pool, px_payload3);
+    if (px_payload3) {
+        ctx->px_payload = px_payload3;
+        ctx->px_payload_version = 3;
+    } else if (px_payload1) {
+        ctx->px_payload = px_payload1;
+        ctx->px_payload_version = 1;
+    }
     ctx->uri = r->unparsed_uri;
     ctx->hostname = r->hostname;
     ctx->http_method = r->method;
@@ -264,9 +275,13 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
         if (verify_captcha(ctx, conf)) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] verify_captcha: validation status true", ctx->app_id);
             // clean users cookie on captcha verification
-            apr_status_t res = ap_cookie_remove2(ctx->r, PX_PAYLOAD_COOKIE_PREFIX, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
-            if (res != APR_SUCCESS) {
+            apr_status_t res1 = ap_cookie_remove2(ctx->r, PX_PAYLOAD_COOKIE_V1_PREFIX, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
+            if (res1 != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] could not remove _px from request", ctx->app_id);
+            }
+            apr_status_t res3 = ap_cookie_remove2(ctx->r, PX_PAYLOAD_COOKIE_V3_PREFIX, NULL, ctx->r->headers_out, ctx->r->err_headers_out, NULL);
+            if (res3 != APR_SUCCESS) {
+                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s] could not remove _px3 from request", ctx->app_id);
             }
             return request_valid;
         } else {
@@ -284,15 +299,16 @@ bool px_verify_request(request_context *ctx, px_config *conf) {
     } else if (ctx->token_origin == TOKEN_ORIGIN_HEADER && strcmp(ctx->px_payload, MOBILE_SDK_CONNECTION_ERROR) == 0) {
         vr = VALIDATION_RESULT_MOBILE_SDK_CONNECTION_ERROR;
     } else {
+        vr = VALIDATION_RESULT_DECRYPTION_FAILED;
         risk_payload *c = decode_payload(ctx->px_payload, conf->payload_key, ctx);
         if (c) {
-            ctx->score = c->b_val;
+            ctx->score = c->score;
             ctx->vid = c->vid;
             ctx->uuid = c->uuid;
+            ctx->action = (c->action && c->action[0] == 'b') ? ACTION_BLOCK : ACTION_CAPTCHA;
             vr = validate_payload(c, ctx, conf->payload_key);
         } else {
             ctx->px_payload_orig = ctx->px_payload;
-            vr = VALIDATION_RESULT_DECRYPTION_FAILED;
         }
     }
     switch (vr) {

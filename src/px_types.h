@@ -63,11 +63,11 @@ typedef struct px_config_t {
     long health_check_interval; // in ms
     bool should_exit_thread;
     bool enable_token_via_header;
-    bool uuid_header_enabled; 
-    bool vid_header_enabled; 
+    bool uuid_header_enabled;
+    bool vid_header_enabled;
     const char *vid_header_name;
     const char *uuid_header_name;
-    bool json_response_enabled; 
+    bool json_response_enabled;
     bool cors_headers_enabled;
     captcha_type_t captcha_type;
     bool monitor_mode;
@@ -142,6 +142,8 @@ typedef struct risk_payload_t {
     const char *b;
     int a_val;
     int b_val;
+    const char *action;
+    int score;
 } risk_payload;
 
 typedef struct risk_response_t {
@@ -161,7 +163,11 @@ typedef struct captcha_response_t {
 typedef struct request_context_t {
     const char *app_id;
     const char *px_payload;
+    const char *px_payload1;
+    const char *px_payload3;
+    int px_payload_version;
     const char *px_payload_decrypted;
+    const char *px_payload_hmac;
     const char *px_captcha;
     const char *ip;
     const char *vid;
@@ -194,7 +200,7 @@ typedef enum {
     PT_FLAG_FUNCAPTCHA = 1 << 3,
 } page_template_bit_t;
 
-typedef enum { 
+typedef enum {
     PAGE_TEMPLATE_BLOCK_WEB = (PT_FLAG_WEB),
     PAGE_TEMPLATE_RECAPTCHA_WEB = (PT_FLAG_WEB | PT_FLAG_RECAPTCHA),
     PAGE_TEMPLATE_FUNCAPTCHA_WEB = (PT_FLAG_WEB | PT_FLAG_FUNCAPTCHA),

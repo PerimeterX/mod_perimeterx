@@ -134,8 +134,9 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
 }
 
 // returns the payload version, 0 if error msg, -1 if header not found
-int extract_payload_from_header(apr_pool_t *pool, apr_table_t *headers, const char **payload) {
-    *payload = NULL;
+int extract_payload_from_header(apr_pool_t *pool, apr_table_t *headers, const char **payload3, const char **payload1) {
+    *payload3 = NULL;
+    *payload1 = NULL;
     const char *header_value = apr_table_get(headers, MOBILE_SDK_HEADER);
     if (header_value) {
         char *rest;
@@ -144,11 +145,19 @@ int extract_payload_from_header(apr_pool_t *pool, apr_table_t *headers, const ch
         const char *postfix = apr_strtok(NULL, "", &rest);
         // if postfix is empty, use prefix as payload number, in this case version will be 0
         if (postfix == NULL) {
-            *payload = prefix;
+            *payload3 = prefix;
             return 0;
         }
-        *payload = postfix;
-        return apr_atoi64(prefix);
+        int version = apr_atoi64(prefix);
+        switch (version) {
+            case 1:
+                *payload1 = postfix;
+                break;
+            case 3:
+                *payload3 = postfix;
+                break;
+        }
+        return version;
     }
     return -1;
 }
