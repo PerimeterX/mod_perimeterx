@@ -221,6 +221,7 @@ void digest_payload(const risk_payload *payload, request_context *ctx, const cha
 }
 
 risk_payload *decode_payload(const char *px_payload, const char *payload_key, request_context *r_ctx) {
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: payload is %s", r_ctx->app_id, px_payload);
     char *px_payload_cpy = apr_pstrdup(r_ctx->r->pool, px_payload);
     char* saveptr;
     const char* delimieter = ":";
@@ -232,6 +233,8 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
             return NULL;
         }
         r_ctx->px_payload_hmac = apr_pstrdup(r_ctx->r->pool, payload_hmac);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: hmac for v3 is %s", r_ctx->app_id, r_ctx->px_payload_hmac);
+        px_payload_cpy = NULL;
     }
     const char* encoded_salt = strtok_r(px_payload_cpy, delimieter, &saveptr);
     if (encoded_salt == NULL) {
@@ -315,7 +318,7 @@ validation_result_t validate_payload(const risk_payload *payload, request_contex
         return VALIDATION_RESULT_NULL_PAYLOAD;
     }
 
-    if (payload->hash == NULL || strlen(payload->hash) == 0) {
+    if (ctx->px_payload_hmac == NULL || strlen(ctx->px_payload_hmac) == 0) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: no hash", ctx->app_id);
         return VALIDATION_RESULT_NO_SIGNING;
     }
@@ -333,7 +336,7 @@ validation_result_t validate_payload(const risk_payload *payload, request_contex
     const char **signing_fields = (ctx->token_origin == TOKEN_ORIGIN_COOKIE) ? signing_fields_ua : signing_nofields;
     digest_payload(payload, ctx, payload_key, signing_fields, signature, HASH_LEN);
 
-    if (memcmp(signature, payload->hash, 64) != 0) {
+    if (memcmp(signature, ctx->px_payload_hmac, 64) != 0) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: invalid signature", ctx->app_id);
         return VALIDATION_RESULT_INVALID;
     }
