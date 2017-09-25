@@ -11,6 +11,7 @@ APLOG_USE_MODULE(perimeterx);
 #endif
 
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
+static const char *ACCEPT_JSON_TYPE = "Accept: application/json";
 static const char *EXPECT = "Expect:";
 static const char *MOBILE_SDK_HEADER = "X-PX-AUTHORIZATION";
 
@@ -26,6 +27,65 @@ void update_and_notify_health_check(px_config *conf, server_rec *server) {
     apr_thread_mutex_unlock(conf->health_check_cond_mutex);
 }
 
+//get
+CURLcode get_request_helper(CURL* curl, const char *url, long timeout, px_config *conf, server_rec *server, char **response_data) {
+    struct response_t response;
+    struct curl_slist *headers = NULL;
+    long status_code;
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+
+    response.data = malloc(1);
+    response.size = 0;
+    response.server = server;
+
+    headers = curl_slist_append(headers, conf->auth_header);
+    headers = curl_slist_append(headers, ACCEPT_JSON_TYPE);
+    
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
+    if (conf->proxy_url) {
+        curl_easy_setopt(curl, CURLOPT_PROXY, conf->proxy_url);
+    }
+    CURLcode status = curl_easy_perform(curl); 
+
+    curl_slist_free_all(headers);
+    size_t len;
+    if (status == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+        if (status_code == HTTP_OK) {
+            if (response_data != NULL) {
+                *response_data = response.data;
+            } else {
+                free(response.data);
+            }
+            return status;
+        }
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server, "[%s]: get_request: status: %lu, url: %s", conf->app_id, status_code, url);
+        status = CURLE_HTTP_RETURNED_ERROR;
+    } else {
+        update_and_notify_health_check(conf, server);
+        size_t len = strlen(errbuf);
+        if (len) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server, "[%s]: get_request failed: %s", conf->app_id, errbuf);
+        } else {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server, "[%s]: get_request failed: %s", conf->app_id, curl_easy_strerror(status));
+        }
+    }
+    free(response.data);
+    if (response_data != NULL) {
+        *response_data = NULL;
+    }
+    return status;
+}
+
+
+//post 
 CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, long timeout, px_config *conf, server_rec *server, char **response_data) {
     struct response_t response;
     struct curl_slist *headers = NULL;

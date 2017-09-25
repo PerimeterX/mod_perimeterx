@@ -6,12 +6,27 @@
 #include <http_protocol.h>
 #include <apr_thread_pool.h>
 #include <apr_queue.h>
+#include <apr_thread_rwlock.h>
 
 #include "curl_pool.h"
 typedef enum {
     CAPTCHA_TYPE_RECAPTCHA,
     CAPTCHA_TYPE_FUNCAPTCHA
 } captcha_type_t;
+
+typedef struct remote_config_t {
+    bool module_enabled;
+    const char *cookie_key;
+    int blocking_score;
+    const char *app_id;
+    const char *module_mode;
+    long connect_timeout;
+    long risk_timeout;
+    bool debug_mode;
+    const char *checksum;
+    apr_array_header_t *ip_header_keys;
+    apr_array_header_t *sensitive_header_keys;
+} remote_config;
 
 typedef struct px_config_t {
     // px module server memory pool
@@ -46,6 +61,7 @@ typedef struct px_config_t {
     apr_array_header_t *useragents_whitelist;
     apr_array_header_t *custom_file_ext_whitelist;
     apr_array_header_t *ip_header_keys;
+    apr_array_header_t *sensitive_header_keys;
     apr_array_header_t *sensitive_routes;
     apr_array_header_t *sensitive_routes_prefix;
     apr_array_header_t *enabled_hostnames;
@@ -62,6 +78,7 @@ typedef struct px_config_t {
     volatile apr_uint32_t px_errors_count;
     long health_check_interval; // in ms
     bool should_exit_thread;
+    bool rc_should_exit_thread;
     bool enable_token_via_header;
     bool uuid_header_enabled;
     bool vid_header_enabled;
@@ -71,6 +88,14 @@ typedef struct px_config_t {
     bool cors_headers_enabled;
     captcha_type_t captcha_type;
     bool monitor_mode;
+    bool remote_config_enabled;
+    const char *remote_config_url;
+    apr_thread_t *remote_config_thread;
+    apr_thread_rwlock_t *remote_config_rw_mutex;
+    apr_thread_mutex_t *remote_config_cond_mutex;    
+    apr_thread_cond_t *remote_config_cond; 
+    long remote_config_interval_ms;
+    remote_config *remote_conf;
 } px_config;
 
 typedef struct health_check_data_t {
@@ -78,10 +103,10 @@ typedef struct health_check_data_t {
     px_config *config;
 } health_check_data;
 
-typedef struct activity_consumer_data_t {
+typedef struct background_thread_data_t {
     px_config *config;
     server_rec *server;
-} activity_consumer_data;
+} background_thread_data;
 
 typedef enum {
     VALIDATION_RESULT_VALID,

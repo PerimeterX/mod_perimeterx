@@ -138,6 +138,25 @@ json_t *headers_to_json_helper(const apr_array_header_t *arr) {
     return j_headers;
 }
 
+static apr_array_header_t *json_arr_to_arr_helper(const json_t *j_arr, apr_pool_t *pool, px_config *conf, server_rec *server) {
+    if(!json_is_array(j_arr)){
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: json_arr_to_arr_helper: failed to to get array", conf->app_id);
+        return NULL;
+    }
+
+    size_t j_size = json_array_size(j_arr);
+    apr_array_header_t *apr_arr = apr_array_make(pool, j_size, sizeof(const char*));
+    
+    for (int i = 0; i < j_size; i++) {
+        json_t *elem = json_array_get(j_arr, i);
+        const char** entry = apr_array_push(apr_arr);
+        *entry = apr_pstrdup(pool, json_string_value(elem));
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: json_arr_to_arr_helper: json data is %s", conf->app_id, json_string_value(elem));
+    }
+    
+    return apr_arr;
+}
+
 char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     // headers array
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
@@ -263,6 +282,56 @@ captcha_response *parse_captcha_response(const char* captcha_response_str, const
     }
     json_decref(j_response);
     return parsed_response;
+}
+
+remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_str, px_config *conf, server_rec *server) {
+    json_error_t j_error;
+    json_t *j_response = json_loads(remote_config_str, 0, &j_error);
+    if (!j_response) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, server, "[%s]: parse_remote_config: failed to remote_config response (%s)", conf->app_id, remote_config_str);
+        return NULL;
+    }
+
+    const char *cookie_key, *app_id, *module_mode, *checksum = NULL;
+    bool debug_mode, module_enabled = false;
+    int blocking_score = 0;
+    long risk_timeout, connect_timeout = 0;
+    
+    if (json_unpack(j_response, "{s:b,s:s,s:i,s:s,s:s,s:i,s:i,s:b,s:s}",
+                "moduleEnabled", &module_enabled,
+                "cookieKey", &cookie_key,
+                "blockingScore", &blocking_score,
+                "appId", &app_id,
+                "moduleMode", &module_mode,
+                "connectTimeout", &connect_timeout,
+                "riskTimeout", &risk_timeout,
+                "debugMode", &debug_mode,
+                "checksum", &checksum )) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, server, "[%s]: parse_remote_config: failed to unpack remote config response (%s)", conf->app_id, remote_config_str);
+        json_decref(j_response);
+        return NULL;
+    }
+
+    remote_config *remote_conf = (remote_config*)apr_palloc(pool, sizeof(remote_config));
+
+    remote_conf->module_enabled = module_enabled;
+    remote_conf->cookie_key = strdup(cookie_key);
+    remote_conf->blocking_score = blocking_score;
+    remote_conf->app_id = strdup(app_id);
+    remote_conf->module_mode = strdup(module_mode);
+    remote_conf->connect_timeout = connect_timeout;
+    remote_conf->risk_timeout = risk_timeout;
+    remote_conf->debug_mode = debug_mode;
+    remote_conf->checksum = strdup(checksum);
+
+    remote_conf->ip_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "ipHeaders"), pool, conf, server);
+    remote_conf->sensitive_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "sensitiveHeaders"), pool, conf, server);
+
+//    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: parse_remote_config: parsed response module_mode[%i] cookie_key[%s] blocking_score[%i] app_id[%s] module_mode[%s] connect_timeout[%ld] risk_timeout[%ld] debug_mode[%i] checksum[%s]", conf->app_id, conf->rc_module_enabled, conf->rc_cookie_key, conf->rc_blocking_score, conf->rc_app_id, conf->rc_module_mode, conf->rc_connect_timeout, conf->rc_risk_timeout, conf->rc_debug_mode, conf->rc_checksum);
+
+    json_decref(j_response);
+    
+    return remote_conf;
 }
 
 risk_response* parse_risk_response(const char* risk_response_str, const request_context *ctx) {
