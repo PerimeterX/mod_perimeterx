@@ -292,11 +292,9 @@ remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_s
         return NULL;
     }
 
-    const char *cookie_key, *app_id, *module_mode, *checksum = NULL;
-    bool debug_mode, module_enabled = false;
-    int blocking_score = 0;
-    long risk_timeout, connect_timeout = 0;
-    
+    char *cookie_key = NULL, *app_id = NULL, *module_mode = NULL, *checksum = NULL;
+    int blocking_score = 0, debug_mode = 0, module_enabled = 0, risk_timeout = 0, connect_timeout = 0;
+
     if (json_unpack(j_response, "{s:b,s:s,s:i,s:s,s:s,s:i,s:i,s:b,s:s}",
                 "moduleEnabled", &module_enabled,
                 "cookieKey", &cookie_key,
@@ -312,22 +310,24 @@ remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_s
         return NULL;
     }
 
-    remote_config *remote_conf = (remote_config*)apr_palloc(pool, sizeof(remote_config));
+    remote_config *remote_conf = apr_palloc(pool, sizeof(remote_config));
+    
+    if (remote_conf) {
+        remote_conf->module_enabled = module_enabled ? true : false;
+        remote_conf->cookie_key = strdup(cookie_key);
+        remote_conf->blocking_score = blocking_score;
+        remote_conf->app_id = strdup(app_id);
+        remote_conf->module_mode = strdup(module_mode);
+        remote_conf->connect_timeout = connect_timeout;
+        remote_conf->risk_timeout = risk_timeout;
+        remote_conf->debug_mode = debug_mode ? true : false;
+        remote_conf->checksum = strdup(checksum);
 
-    remote_conf->module_enabled = module_enabled;
-    remote_conf->cookie_key = strdup(cookie_key);
-    remote_conf->blocking_score = blocking_score;
-    remote_conf->app_id = strdup(app_id);
-    remote_conf->module_mode = strdup(module_mode);
-    remote_conf->connect_timeout = connect_timeout;
-    remote_conf->risk_timeout = risk_timeout;
-    remote_conf->debug_mode = debug_mode;
-    remote_conf->checksum = strdup(checksum);
+        remote_conf->ip_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "ipHeaders"), pool, conf, server);
+        remote_conf->sensitive_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "sensitiveHeaders"), pool, conf, server);
 
-    remote_conf->ip_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "ipHeaders"), pool, conf, server);
-    remote_conf->sensitive_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "sensitiveHeaders"), pool, conf, server);
-
-//    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: parse_remote_config: parsed response module_mode[%i] cookie_key[%s] blocking_score[%i] app_id[%s] module_mode[%s] connect_timeout[%ld] risk_timeout[%ld] debug_mode[%i] checksum[%s]", conf->app_id, conf->rc_module_enabled, conf->rc_cookie_key, conf->rc_blocking_score, conf->rc_app_id, conf->rc_module_mode, conf->rc_connect_timeout, conf->rc_risk_timeout, conf->rc_debug_mode, conf->rc_checksum);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: parse_remote_remote_config: parsed response module_mode[%i] cookie_key[%s] blocking_score[%i] app_id[%s] module_mode[%s] connect_timeout[%ld] risk_timeout[%ld] debug_mode[%i] checksum[%s]", conf->app_id, remote_conf->module_enabled, remote_conf->cookie_key, remote_conf->blocking_score, remote_conf->app_id, remote_conf->module_mode, remote_conf->connect_timeout, remote_conf->risk_timeout, remote_conf->debug_mode, remote_conf->checksum);
+    }
 
     json_decref(j_response);
     

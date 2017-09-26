@@ -128,10 +128,12 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 
 bool px_should_verify_request(request_rec *r, px_config *conf) {
     if (!conf->module_enabled) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_should_verify_request: module_enabled false", conf->app_id);
         return false;
     }
 
     if (conf->block_page_url && strcmp(r->uri, conf->block_page_url) == 0) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_should_verify_request: block_pagE_url or strcmp return false", conf->app_id);
         return false;
     }
 

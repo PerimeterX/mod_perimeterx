@@ -162,7 +162,6 @@ int px_handle_request(request_rec *r, px_config *conf) {
             return OK;
         }
     }
-    // aquire lock for remote config r/w, must remember to release read lock eventually
 
     request_context *ctx = create_context(r, conf);
     if (ctx) {
@@ -373,6 +372,9 @@ static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *
 
 static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *data){
     background_thread_data *remote_conf_data = (background_thread_data*) data;
+    if (!remote_conf_data){
+        return NULL;
+    }
     px_config *conf = remote_conf_data->config;
     
     CURL *curl = curl_easy_init();
@@ -394,17 +396,13 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
         }
 
         char *url = apr_pstrcat(rc_pool, conf->remote_config_url, "?checksum=", checksum, NULL) ;
-        //char url[2000];
-        //const char *checksum = conf->remote_config_data->checksum ? conf->remote_config_data->checksum : "";
-        //sprintf(url, sizeof(url), "%s?checksum=%s",conf->remote_config_url, checksum);
 
         char *remote_config_str;
         CURLcode status = get_request_helper(curl, url, conf->api_timeout_ms, conf, remote_conf_data->server, &remote_config_str);
         
         if (status == CURLE_OK) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: found new configurations", conf->app_id);
-            remote_config *remote_conf = NULL;
-            remote_conf = parse_remote_config(rc_pool, remote_config_str, conf, remote_conf_data->server);
+            remote_config *remote_conf = parse_remote_config(rc_pool, remote_config_str, conf, remote_conf_data->server);
             if (remote_conf){
                 ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: parsed remote config succesfully", conf->app_id);
                 // Lock mutex for incoming requests
@@ -1033,12 +1031,23 @@ static const char *set_monitor_mode(cmd_parms *cmd, void *config, int arg) {
     return NULL;
 }
 
+static void acquire_read_lock(px_config *conf){
+    if (conf->remote_config_enabled){
+        apr_thread_rwlock_rdlock(conf->remote_config_rw_mutex);	
+    }
+}
+
+static void release_read_lock(px_config *conf){
+    if (conf->remote_config_enabled){
+        apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+    }
+}
 
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
-    apr_thread_rwlock_rdlock(conf->remote_config_rw_mutex);	
+    acquire_read_lock(conf);
     int rv = px_handle_request(r, conf);
-    apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+    release_read_lock(conf);
     return rv;
 }
 
