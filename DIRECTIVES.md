@@ -38,6 +38,10 @@ Directives
 | BackgroundActivityWorkers | Number of background workers to send activities | 10 | Number | Integer |
 | BackgroundActivityQueueSize | Queue size for background activity send | 1000 | Number | Integer |
 | MonitorMode | Toggles the module monitor | true | bool | On / Off |
+| EnableRemoteConfiguration | Toggles remote configuration pulling | true | bool | On / Off |
+| RemoteConfigurationUrl | Set the url from where to fetch the remote configuration | Default | String | ANY |
+| RemoteConfigurationIntervalMS | Set interval to fetch configuration | 5000 | Number | Integer |
+| SensitiveHeader | List of sensitive headers which will not be reported back to PerimeterX servers | NULL | List | String |
 #### <a name="ipheader">IPHeader Additional Information</a>: 
 
 * The order of headers in the configuration matters. The first header found with a value will be taken as the IP address.

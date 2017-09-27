@@ -1354,7 +1354,7 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Set timeout for risk API request in milliseconds"),
-      AP_INIT_ITERATE("IPHeader",
+      AP_INIT_ITERATE("SensitiveHeader",
             set_sensitive_headers,
             NULL,
             OR_ALL,
