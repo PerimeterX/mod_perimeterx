@@ -61,6 +61,13 @@ static const char *CAPTCHA_TYPE_STR[] = {
     [CAPTCHA_TYPE_FUNCAPTCHA] = "funCaptcha",
 };
 
+
+void bool is_sensitive_header(char *key, apr_array_header_t* sensitive_headers){
+    const apr_array_header_t *header_arr = apr_table_elts(sensitive_headers);
+    for (int i = 0; i < header_arr->nelts; i++) {
+    }
+}
+
 // format json requests
 //
 char *create_activity(const char *activity_type, const px_config *conf, const request_context *ctx) {
@@ -99,7 +106,9 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
     for (int i = 0; i < header_arr->nelts; i++) {
         apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
-        json_object_set_new(j_headers, h.key, json_string(h.val));
+        if (!is_sensitive_header(h.key, conf->sensitive_headers)) {
+            json_object_set_new(j_headers, h.key, json_string(h.val));
+        }
     }
 
     json_t *activity = json_pack("{s:s, s:s, s:s, s:s, s:O, s:O}",
