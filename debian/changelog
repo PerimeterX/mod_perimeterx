@@ -1,3 +1,10 @@
+libapache-mod-perimeterx (2.8.0-rc.4) jessie; urgency=medium
+
+  * Fixed internal request would not be inspected
+  * Added missing directives in docs 
+
+ -- nitzanpx <nitzanpx@github>  Wed, 27 Sep 2017 09:46:00 +0000
+
 libapache-mod-perimeterx (2.8.0-rc.3) jessie; urgency=medium
 
   * Added support for cookie v3 

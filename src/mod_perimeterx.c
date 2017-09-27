@@ -49,7 +49,7 @@ static const char *CONTENT_TYPE_JSON = "application/json";
 static const char *CONTENT_TYPE_HTML = "text/html";
 
 // constants
-static const char *PERIMETERX_MODULE_VERSION = "Apache Module v2.8.0-rc.3";
+static const char *PERIMETERX_MODULE_VERSION = "Apache Module v2.8.0-rc.4";
 static const char *SCORE_HEADER_NAME = "X-PX-SCORE";
 static const char *VID_HEADER_NAME = "X-PX-VID";
 static const char *UUID_HEADER_NAME = "X-PX-UUID";
@@ -149,6 +149,12 @@ int px_handle_request(request_rec *r, px_config *conf) {
     // fail open mode
     if (apr_atomic_read32(&conf->px_errors_count) >= conf->px_errors_threshold) {
         return OK;
+    }
+
+    // Decline internal redirects and subrequests 
+    if (r->prev) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_handle_request: request declined - interal redirect or subrequest", conf->app_id);
+	    return DECLINED;
     }
 
     if (!px_should_verify_request(r, conf)) {

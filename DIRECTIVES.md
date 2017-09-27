@@ -37,6 +37,7 @@ Directives
 | BackgroundActivitySend | Toggles on/off asyncrounus activity reporting | true | bool | On / Off |
 | BackgroundActivityWorkers | Number of background workers to send activities | 10 | Number | Integer |
 | BackgroundActivityQueueSize | Queue size for background activity send | 1000 | Number | Integer |
+| MonitorMode | Toggles the module monitor | true | bool | On / Off |
 #### <a name="ipheader">IPHeader Additional Information</a>: 
 
 * The order of headers in the configuration matters. The first header found with a value will be taken as the IP address.
