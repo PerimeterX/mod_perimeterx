@@ -410,19 +410,25 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
                 // ---------------------------------------------------
                 // all thread safe operations should be here 
                 conf->remote_conf = remote_conf;
-                
                 conf->module_enabled = conf->remote_conf->module_enabled;
                 conf->payload_key = conf->remote_conf->cookie_key;
                 conf->blocking_score = conf->remote_conf->blocking_score;
                 conf->app_id = conf->remote_conf->app_id;
-                //conf->module_mode = conf->remote_conf->module_mode; 
+                conf->monitor_mode = !strcmp(conf->remote_conf->module_mode, "blocking") ? false : true; 
                 conf->api_timeout_ms = conf->remote_conf->risk_timeout;
                 conf->ip_header_keys = conf->remote_conf->ip_header_keys;
                 conf->sensitive_header_keys = conf->remote_conf->sensitive_header_keys;
-
                 // ---------------------------------------------------
                 apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);        
             }
+        } else if (!conf->remote_conf || !conf->remote_conf->checksum) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: remote configurations: failed to get configuration and no initial remote configuration, disabling module until new config will be found", conf->app_id);
+            apr_thread_rwlock_wrlock(conf->remote_config_rw_mutex);
+            // all thread safe operations should be here 
+            conf->module_enabled = false;
+            // all thread safe operations should be here 
+            apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);        
+            
         }
         // clear the pool;
         apr_pool_destroy(rc_pool);
@@ -1031,6 +1037,16 @@ static const char *set_monitor_mode(cmd_parms *cmd, void *config, int arg) {
     return NULL;
 }
 
+static const char *set_sensitive_headers(cmd_parms *cmd, void *config, const char *sensitive_header) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    const char** entry = apr_array_push(conf->sensitive_header_keys);
+    *entry = sensitive_header;
+    return NULL;
+}
+
 static void acquire_read_lock(px_config *conf){
     if (conf->remote_config_enabled){
         apr_thread_rwlock_rdlock(conf->remote_config_rw_mutex);	
@@ -1073,6 +1089,7 @@ static void *create_config(apr_pool_t *p) {
         conf->useragents_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->custom_file_ext_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
+        conf->sensitive_header_keys = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
@@ -1331,6 +1348,11 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Set timeout for risk API request in milliseconds"),
+      AP_INIT_ITERATE("IPHeader",
+            set_sensitive_headers,
+            NULL,
+            OR_ALL,
+            "Sets a value for a sensitive header which will be filtered and not be reported back"),
     { NULL }
 };
 

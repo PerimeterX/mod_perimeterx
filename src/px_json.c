@@ -62,10 +62,14 @@ static const char *CAPTCHA_TYPE_STR[] = {
 };
 
 
-void bool is_sensitive_header(char *key, apr_array_header_t* sensitive_headers){
-    const apr_array_header_t *header_arr = apr_table_elts(sensitive_headers);
-    for (int i = 0; i < header_arr->nelts; i++) {
+static bool is_sensitive_header(char *key, apr_array_header_t* sensitive_headers){
+    for (int i = 0; i < sensitive_headers->nelts; i++) {
+        apr_table_entry_t sensitive_header = APR_ARRAY_IDX(sensitive_headers, i, apr_table_entry_t);
+        if (!strcmp(sensitive_header.key, key)) {
+            return true;
+        }
     }
+    return false;
 }
 
 // format json requests
@@ -106,7 +110,7 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
     for (int i = 0; i < header_arr->nelts; i++) {
         apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
-        if (!is_sensitive_header(h.key, conf->sensitive_headers)) {
+        if (!is_sensitive_header(h.key, conf->sensitive_header_keys)) {
             json_object_set_new(j_headers, h.key, json_string(h.val));
         }
     }
@@ -132,16 +136,18 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
     return request_str;
 }
 
-json_t *headers_to_json_helper(const apr_array_header_t *arr) {
+json_t *headers_to_json_helper(const apr_array_header_t *arr,apr_array_header_t *sensitive_headers) {
     json_t *j_headers = json_array();
     // Extract all headers and jsonfy it
     if (arr) {
         for (int i = 0; i < arr->nelts; i++) {
             apr_table_entry_t h = APR_ARRAY_IDX(arr, i, apr_table_entry_t);
-            json_t *j_header = json_object();
-            json_object_set_new(j_header, "name", json_string(h.key));
-            json_object_set_new(j_header, "value", json_string(h.val));
-            json_array_append_new(j_headers, j_header);
+            if (!is_sensitive_header(h.key, sensitive_headers)) {
+                json_t *j_header = json_object();
+                json_object_set_new(j_header, "name", json_string(h.key));
+                json_object_set_new(j_header, "value", json_string(h.val));
+                json_array_append_new(j_headers, j_header);
+            }
         }
     }
     return j_headers;
@@ -169,7 +175,7 @@ static apr_array_header_t *json_arr_to_arr_helper(const json_t *j_arr, apr_pool_
 char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     // headers array
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
-    json_t *j_headers = headers_to_json_helper(header_arr);
+    json_t *j_headers = headers_to_json_helper(header_arr, conf->sensitive_header_keys);
 
     // request object
     json_t *j_request = json_pack("{s:s,s:s,s:s,s:O}",
@@ -222,7 +228,7 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
 char *create_captcha_payload(const request_context *ctx, const px_config *conf) {
     // headers array
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
-    json_t *j_headers = headers_to_json_helper(header_arr);
+    json_t *j_headers = headers_to_json_helper(header_arr, conf->sensitive_header_keys);
 
     // request object
     json_t *j_request = json_pack("{s:s,s:s,s:s,s:s,s:O}",
