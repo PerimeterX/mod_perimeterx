@@ -64,8 +64,8 @@ static const char *CAPTCHA_TYPE_STR[] = {
 
 static bool is_sensitive_header(char *key, apr_array_header_t* sensitive_headers){
     for (int i = 0; i < sensitive_headers->nelts; i++) {
-        apr_table_entry_t sensitive_header = APR_ARRAY_IDX(sensitive_headers, i, apr_table_entry_t);
-        if (!strcmp(sensitive_header.key, key)) {
+        const char *sensitive_header = APR_ARRAY_IDX(sensitive_headers, i, const char*);
+        if (!strcmp(sensitive_header, key)) {
             return true;
         }
     }
@@ -329,14 +329,14 @@ remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_s
     
     if (remote_conf) {
         remote_conf->module_enabled = module_enabled ? true : false;
-        remote_conf->cookie_key = strdup(cookie_key);
+        remote_conf->cookie_key = apr_pstrdup(pool, cookie_key); 
         remote_conf->blocking_score = blocking_score;
-        remote_conf->app_id = strdup(app_id);
-        remote_conf->module_mode = strdup(module_mode);
+        remote_conf->app_id = apr_pstrdup(pool, app_id);
+        remote_conf->module_mode = apr_pstrdup(pool, module_mode);
         remote_conf->connect_timeout = connect_timeout;
         remote_conf->risk_timeout = risk_timeout;
         remote_conf->debug_mode = debug_mode ? true : false;
-        remote_conf->checksum = strdup(checksum);
+        remote_conf->checksum = apr_pstrdup(pool, checksum);
 
         remote_conf->ip_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "ipHeaders"), pool, conf, server);
         remote_conf->sensitive_header_keys = json_arr_to_arr_helper(json_object_get(j_response, "sensitiveHeaders"), pool, conf, server);
