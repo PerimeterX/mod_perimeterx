@@ -942,9 +942,6 @@ static void *create_config(apr_pool_t *p) {
         conf->vid_header_name = VID_HEADER_NAME;
         conf->json_response_enabled = false;
         conf->apply_cors_by_envvar = false;
-        conf->cors_allowed_methods = NULL;
-        conf->cors_allowed_headers = NULL;
-        conf->cors_max_age = -1;
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
         conf->monitor_mode = false;
         conf->enable_token_via_header = true;
