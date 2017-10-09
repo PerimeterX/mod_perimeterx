@@ -78,10 +78,13 @@ extern const char *CALL_REASON_STR[];
 
 char* create_response(px_config *conf, request_context *ctx) {
     // support for cors headers
+    ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_response: cors enabled", ctx->app_id);            
     if (conf->apply_cors_by_envvar) {
-        const char *value = apr_table_get(ctx->r->subprocess_env, "PX_APPLY_CORS");
-        if (value) {
-            apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN, value);        
+        const char *cors_value = apr_table_get(ctx->r->subprocess_env, "PX_APPLY_CORS");
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_response: cors enabled", ctx->app_id);            
+        if (cors_value) {
+            ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_response: cors value %s", ctx->app_id, cors_value);            
+            apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN, cors_value);        
             if (conf->cors_allowed_methods) {
                 apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_METHODS, conf->cors_allowed_methods);        
             }
@@ -1198,12 +1201,12 @@ static const command_rec px_directives[] = {
             enable_cors_headers,
             NULL,
             OR_ALL,
-            "Enable module to appy CORS headres on response"),
-    AP_INIT_TAKE1("EnableCORSHeaders",
-            set_cors_allowed_headers,
+            "Enable module to apply CORS headres on response"),
+    AP_INIT_FLAG("EnableCORSHeaders",
+            enable_cors_headers,
             NULL,
             OR_ALL,
-            "Sets the allowed headers for CORS"),
+            "Enable module to apply CORS headres on response"),
     AP_INIT_TAKE1("PXApplyAccessControlAllowedHeaders",
             set_cors_allowed_headers,
             NULL,
