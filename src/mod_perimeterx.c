@@ -52,19 +52,21 @@ static const char *SCORE_HEADER_NAME = "X-PX-SCORE";
 static const char *VID_HEADER_NAME = "X-PX-VID";
 static const char *UUID_HEADER_NAME = "X-PX-UUID";
 static const char *ACCEPT_HEADER_NAME = "Accept";
-static const char *CORS_HEADER_NAME = "Access-Control-Allow-Origin";
-static const char *ORIGIN_HEADER_NAME = "Origin";
-static const char *ORIGIN_DEFAULT_VALUE = "*";
+static const char *ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin";
+static const char *ACCESS_CONTROL_ALLOW_METHODS = "Access-Control-Allow-Methods";
+static const char *ACCESS_CONTROL_ALLOW_HEADERS = "Access-Control-Allow-Headers";
+static const char *ACCESS_CONTROL_MAX_AGE = "Access-Control-Max-Age";
 
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const int MAX_CURL_POOL_SIZE = 10000;
 static const int ERR_BUF_SIZE = 128;
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
-static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
+static const char *MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
 static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers, must be greater than zero";
 static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size , must be greater than zero";
 static const char *ERROR_BASE_URL_BEFORE_APP_ID = "mod_perimeterx: BaseUrl was set before AppId";
+static const char *INVALID_MAX_AGE_SIZE = "mod_perimeterx: invalid number for access-control-max-age";
 
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
@@ -76,10 +78,20 @@ extern const char *CALL_REASON_STR[];
 
 char* create_response(px_config *conf, request_context *ctx) {
     // support for cors headers
-    if (conf->cors_headers_enabled) {
-        const char *origin_header = apr_table_get(ctx->r->headers_in, ORIGIN_HEADER_NAME);               
-        const char *origin_value = origin_header ? origin_header : ORIGIN_DEFAULT_VALUE; 
-        apr_table_set(ctx->r->headers_out, CORS_HEADER_NAME, origin_value);        
+    if (conf->apply_cors_by_envvar) {
+        const char *value = apr_table_get(ctx->r->subprocess_env, "PX_APPLY_CORS");
+        if (!value == NULL) {
+            apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN, value);        
+            if (conf->cors_allowed_methods) {
+                apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_METHODS, conf->cors_allowed_methods);        
+            }
+            if (conf->cors_allowed_headers) {
+                apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_HEADERS, conf->cors_allowed_headers);        
+            }
+            if (conf->cors_max_age > -1) {
+                apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_MAX_AGE, conf->cors_max_age);        
+            }
+        }
     }
 
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
@@ -868,7 +880,42 @@ static const char *enable_cors_headers(cmd_parms *cmd, void *config, int arg) {
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    conf->cors_headers_enabled = arg ? true : false;
+    conf->apply_cors_by_envvar = arg ? true : false;
+    return NULL;
+}
+
+static const char* set_cors_max_age(cmd_parms *cmd, void *config, const char *max_age) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    int max_age = atoi(max_age);
+    if (max_age < 1) {
+        return INVALID_MAX_AGE_SIZE;
+    }
+    conf->cors_max_age = max_age;
+
+    return NULL;
+}
+
+static const char* set_cors_allowed_methods(cmd_parms *cmd, void *config, const char *allowed_methods) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    conf->cors_allowed_methods = allowed_methods;
+    return NULL;
+}
+
+static const char* set_cors_allowed_headers(cmd_parms *cmd, void *config, const char *allowed_headers) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    conf->cors_allowed_headers = allowed_headers;
     return NULL;
 }
 
@@ -938,221 +985,239 @@ static void *create_config(apr_pool_t *p) {
         conf->uuid_header_name = UUID_HEADER_NAME;
         conf->vid_header_name = VID_HEADER_NAME;
         conf->json_response_enabled = false;
-        conf->cors_headers_enabled = false;
-        conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
-        conf->monitor_mode = false;
-        conf->enable_token_via_header = true;
+        conf->apply_cors_by_envvar = false;
+        conf->cors_allowed_methods = NULL;
+        conf->cors_allowed_headers = NULL;
+        CONF->CORS_MAX_AGE = -1;
+        CONF->CAPTCHA_TYPE = CAPTCHA_TYPE_RECAPTCHA;
+        CONF->MONITOR_MODE = FALSE;
+        CONF->ENABLE_TOKEN_VIA_HEADER = TRUE;
     }
-    return conf;
+    RETURN CONF;
 }
 
-static const command_rec px_directives[] = {
-    AP_INIT_FLAG("PXEnabled",
-            set_px_enabled,
+STATIC CONST COMMAND_REC PX_DIRECTIVES[] = {
+    AP_INIT_FLAG("PXENABLED",
+            SET_PX_ENABLED,
             NULL,
             OR_ALL,
-            "Turn on mod_px"),
-    AP_INIT_FLAG("Captcha",
-            set_captcha_enabled,
+            "TURN ON MOD_PX"),
+    AP_INIT_FLAG("CAPTCHA",
+            SET_CAPTCHA_ENABLED,
             NULL,
             OR_ALL,
-            "Include captcha in the blocking page"),
-    AP_INIT_TAKE1("AppID",
-            set_app_id,
+            "INCLUDE CAPTCHA IN THE BLOCKING PAGE"),
+    AP_INIT_TAKE1("APPID",
+            SET_APP_ID,
             NULL,
             OR_ALL,
-            "PX Application ID"),
-    AP_INIT_TAKE1("CookieKey",
-            set_payload_key,
+            "PX APPLICATION ID"),
+    AP_INIT_TAKE1("COOKIEKEY",
+            SET_PAYLOAD_KEY,
             NULL,
             OR_ALL,
-            "Cookie decryption key"),
-    AP_INIT_TAKE1("AuthToken",
-            set_auth_token,
+            "COOKIE DECRYPTION KEY"),
+    AP_INIT_TAKE1("AUTHTOKEN",
+            SET_AUTH_TOKEN,
             NULL,
             OR_ALL,
-            "Risk API auth token"),
-    AP_INIT_TAKE1("CustomLogo",
-            set_custom_logo,
+            "RISK API AUTH TOKEN"),
+    AP_INIT_TAKE1("CUSTOMLOGO",
+            SET_CUSTOM_LOGO,
             NULL,
             OR_ALL,
-            "Set custom logo on block page"),
-    AP_INIT_TAKE1("CSSRef",
-            set_css_ref,
+            "SET CUSTOM LOGO ON BLOCK PAGE"),
+    AP_INIT_TAKE1("CSSREF",
+            SET_CSS_REF,
             NULL,
             OR_ALL,
-            "Set custom css on block page"),
-    AP_INIT_TAKE1("JSRef",
-            set_js_ref,
+            "SET CUSTOM CSS ON BLOCK PAGE"),
+    AP_INIT_TAKE1("JSREF",
+            SET_JS_REF,
             NULL,
             OR_ALL,
-            "Set custom javascript on block page"),
-    AP_INIT_TAKE1("BlockingScore",
-            set_blocking_score,
+            "SET CUSTOM JAVASCRIPT ON BLOCK PAGE"),
+    AP_INIT_TAKE1("BLOCKINGSCORE",
+            SET_BLOCKING_SCORE,
             NULL,
             OR_ALL,
-            "Request with score equal or greater than this will be blocked"),
-    AP_INIT_TAKE1("APITimeout",
-            set_api_timeout,
+            "REQUEST WITH SCORE EQUAL OR GREATER THAN THIS WILL BE BLOCKED"),
+    AP_INIT_TAKE1("APITIMEOUT",
+            SET_API_TIMEOUT,
             NULL,
             OR_ALL,
-            "Set timeout for risk API request in seconds"),
-    AP_INIT_TAKE1("APITimeoutMS",
-            set_api_timeout_ms,
+            "SET TIMEOUT FOR RISK API REQUEST IN SECONDS"),
+    AP_INIT_TAKE1("APITIMEOUTMS",
+            SET_API_TIMEOUT_MS,
             NULL,
             OR_ALL,
-            "Set timeout for risk API request in milliseconds"),
-    AP_INIT_TAKE1("CaptchaTimeout",
-            set_captcha_timeout,
+            "SET TIMEOUT FOR RISK API REQUEST IN MILLISECONDS"),
+    AP_INIT_TAKE1("CAPTCHATIMEOUT",
+            SET_CAPTCHA_TIMEOUT,
             NULL,
             OR_ALL,
-            "Set timeout for captcha API request in milliseconds"),
-    AP_INIT_FLAG("ReportPageRequest",
-            set_pagerequest_enabled,
+            "SET TIMEOUT FOR CAPTCHA API REQUEST IN MILLISECONDS"),
+    AP_INIT_FLAG("REPORTPAGEREQUEST",
+            SET_PAGEREQUEST_ENABLED,
             NULL,
             OR_ALL,
-            "Enable page_request activities report"),
-    AP_INIT_ITERATE("IPHeader",
-            set_ip_headers,
+            "ENABLE PAGE_REQUEST ACTIVITIES REPORT"),
+    AP_INIT_ITERATE("IPHEADER",
+            SET_IP_HEADERS,
             NULL,
             OR_ALL,
-            "This headers will be used to get the request real IP, first header to get valid IP will be usesd"),
-    AP_INIT_TAKE1("CurlPoolSize",
-            set_curl_pool_size,
+            "THIS HEADERS WILL BE USED TO GET THE REQUEST REAL IP, FIRST HEADER TO GET VALID IP WILL BE USESD"),
+    AP_INIT_TAKE1("CURLPOOLSIZE",
+            SET_CURL_POOL_SIZE,
             NULL,
             OR_ALL,
-            "Determines number of curl active handles"),
-    AP_INIT_TAKE1("BaseURL",
-            set_base_url,
+            "DETERMINES NUMBER OF CURL ACTIVE HANDLES"),
+    AP_INIT_TAKE1("BASEURL",
+            SET_BASE_URL,
             NULL,
             OR_ALL,
-            "PerimeterX server base URL"),
-    AP_INIT_FLAG("DisableModByEnvvar",
-            set_skip_mod_by_envvar,
+            "PERIMETERX SERVER BASE URL"),
+    AP_INIT_FLAG("DISABLEMODBYENVVAR",
+            SET_SKIP_MOD_BY_ENVVAR,
             NULL,
             OR_ALL,
-            "Allow to disable PerimeterX module by environment variable"),
-    AP_INIT_TAKE1("BlockPageURL",
-            set_block_page_url,
+            "ALLOW TO DISABLE PERIMETERX MODULE BY ENVIRONMENT VARIABLE"),
+    AP_INIT_TAKE1("BLOCKPAGEURL",
+            SET_BLOCK_PAGE_URL,
             NULL,
             OR_ALL,
-            "URL for custom blocking page"),
-    AP_INIT_ITERATE("PXWhitelistRoutes",
-            add_route_to_whitelist,
+            "URL FOR CUSTOM BLOCKING PAGE"),
+    AP_INIT_ITERATE("PXWHITELISTROUTES",
+            ADD_ROUTE_TO_WHITELIST,
             NULL,
             OR_ALL,
-            "Whitelist by paths - this module will not apply on this path list"),
-    AP_INIT_ITERATE("PXWhitelistUserAgents",
-            add_useragent_to_whitelist,
+            "WHITELIST BY PATHS - THIS MODULE WILL NOT APPLY ON THIS PATH LIST"),
+    AP_INIT_ITERATE("PXWHITELISTUSERAGENTS",
+            ADD_USERAGENT_TO_WHITELIST,
             NULL,
             OR_ALL,
-            "Whitelist by User-Agents - this module will not apply on these user-agents"),
-    AP_INIT_ITERATE("ExtensionWhitelist",
-            add_file_extension_whitelist,
+            "WHITELIST BY USER-AGENTS - THIS MODULE WILL NOT APPLY ON THESE USER-AGENTS"),
+    AP_INIT_ITERATE("EXTENSIONWHITELIST",
+            ADD_FILE_EXTENSION_WHITELIST,
             NULL,
             OR_ALL,
-            "Whitelist by file extensions - this module will not apply on files with one of these file extensions"),
-    AP_INIT_ITERATE("SensitiveRoutes",
-            add_sensitive_route,
+            "WHITELIST BY FILE EXTENSIONS - THIS MODULE WILL NOT APPLY ON FILES WITH ONE OF THESE FILE EXTENSIONS"),
+    AP_INIT_ITERATE("SENSITIVEROUTES",
+            ADD_SENSITIVE_ROUTE,
             NULL,
             OR_ALL,
-            "Sensitive routes - for each of this uris the module will do a server-to-server call even if a good cookie is on the request"),
-    AP_INIT_ITERATE("SensitiveRoutesPrefix",
-            add_sensitive_route_prefix,
+            "SENSITIVE ROUTES - FOR EACH OF THIS URIS THE MODULE WILL DO A SERVER-TO-SERVER CALL EVEN IF A GOOD COOKIE IS ON THE REQUEST"),
+    AP_INIT_ITERATE("SENSITIVEROUTESPREFIX",
+            ADD_SENSITIVE_ROUTE_PREFIX,
             NULL,
             OR_ALL,
-            "Sensitive routes by prefix - for each of this uris prefix the module will do a server-to-server call even if a good cookie is on the request"),
-    AP_INIT_ITERATE("EnableBlockingByHostname",
-            add_host_to_list,
+            "SENSITIVE ROUTES BY PREFIX - FOR EACH OF THIS URIS PREFIX THE MODULE WILL DO A SERVER-TO-SERVER CALL EVEN IF A GOOD COOKIE IS ON THE REQUEST"),
+    AP_INIT_ITERATE("ENABLEBLOCKINGBYHOSTNAME",
+            ADD_HOST_TO_LIST,
             NULL,
             OR_ALL,
-            "Enable blocking by hostname - list of hostnames on which PX module will be enabled for"),
-    AP_INIT_FLAG("BackgroundActivitySend",
-            set_background_activity_send,
+            "ENABLE BLOCKING BY HOSTNAME - LIST OF HOSTNAMES ON WHICH PX MODULE WILL BE ENABLED FOR"),
+    AP_INIT_FLAG("BACKGROUNDACTIVITYSEND",
+            SET_BACKGROUND_ACTIVITY_SEND,
             NULL,
             OR_ALL,
-            "Use background workers to send activities"),
-    AP_INIT_TAKE1("BackgroundActivityWorkers",
-            set_background_activity_workers,
+            "USE BACKGROUND WORKERS TO SEND ACTIVITIES"),
+    AP_INIT_TAKE1("BACKGROUNDACTIVITYWORKERS",
+            SET_BACKGROUND_ACTIVITY_WORKERS,
             NULL,
             OR_ALL,
-            "Number of background workers to send activities"),
-    AP_INIT_TAKE1("BackgroundActivityQueueSize",
-            set_background_activity_queue_size,
+            "NUMBER OF BACKGROUND WORKERS TO SEND ACTIVITIES"),
+    AP_INIT_TAKE1("BACKGROUNDACTIVITYQUEUESIZE",
+            SET_BACKGROUND_ACTIVITY_QUEUE_SIZE,
             NULL,
             OR_ALL,
-            "Queue size for background activity send"),
-    /* This should be removed in later version, replaced by PXHealthCheck */
-    AP_INIT_FLAG("PXServiceMonitor",
-            set_px_health_check,
+            "QUEUE SIZE FOR BACKGROUND ACTIVITY SEND"),
+    /* THIS SHOULD BE REMOVED IN LATER VERSION, REPLACED BY PXHEALTHCHECK */
+    AP_INIT_FLAG("PXSERVICEMONITOR",
+            SET_PX_HEALTH_CHECK,
             NULL,
             OR_ALL,
-            "Background monitoring on PerimeterX service"),
-    AP_INIT_FLAG("PXHealthCheck",
-            set_px_health_check,
+            "BACKGROUND MONITORING ON PERIMETERX SERVICE"),
+    AP_INIT_FLAG("PXHEALTHCHECK",
+            SET_PX_HEALTH_CHECK,
             NULL,
             OR_ALL,
-            "Background monitoring on PerimeterX service"),
-    AP_INIT_TAKE1("MaxPXErrorsThreshold",
-            set_max_px_errors_threshold,
+            "BACKGROUND MONITORING ON PERIMETERX SERVICE"),
+    AP_INIT_TAKE1("MAXPXERRORSTHRESHOLD",
+            SET_MAX_PX_ERRORS_THRESHOLD,
             NULL,
             OR_ALL,
-            "Number of errors from px servers before running in fail open mode"),
-    AP_INIT_TAKE1("PXErrorsCountInterval",
-            set_px_errors_count_interval,
+            "NUMBER OF ERRORS FROM PX SERVERS BEFORE RUNNING IN FAIL OPEN MODE"),
+    AP_INIT_TAKE1("PXERRORSCOUNTINTERVAL",
+            SET_PX_ERRORS_COUNT_INTERVAL,
             NULL,
             OR_ALL,
-            "Time in milliseconds until we set the px server errors count back to zero"),
-    AP_INIT_TAKE1("ProxyURL",
-            set_proxy_url,
+            "TIME IN MILLISECONDS UNTIL WE SET THE PX SERVER ERRORS COUNT BACK TO ZERO"),
+    AP_INIT_TAKE1("PROXYURL",
+            SET_PROXY_URL,
             NULL,
             OR_ALL,
-            "Proxy URL for outgoing PerimeterX service API"),
-    AP_INIT_FLAG("ScoreHeader",
-            set_score_header,
+            "PROXY URL FOR OUTGOING PERIMETERX SERVICE API"),
+    AP_INIT_FLAG("SCOREHEADER",
+            SET_SCORE_HEADER,
             NULL,
             OR_ALL,
-            "Allow module to place request score on response header"),
-    AP_INIT_TAKE1("ScoreHeaderName",
-            set_score_header_name,
+            "ALLOW MODULE TO PLACE REQUEST SCORE ON RESPONSE HEADER"),
+    AP_INIT_TAKE1("SCOREHEADERNAME",
+            SET_SCORE_HEADER_NAME,
             NULL,
             OR_ALL,
-            "Set the name of the score header"),
-    AP_INIT_FLAG("EnableTokenViaHeader",
-            enable_token_via_header,
+            "SET THE NAME OF THE SCORE HEADER"),
+    AP_INIT_FLAG("ENABLETOKENVIAHEADER",
+            ENABLE_TOKEN_VIA_HEADER,
             NULL,
             OR_ALL,
-            "Enable header based token send"),
-    AP_INIT_FLAG("VidHeader",
-            enable_vid_header,
+            "ENABLE HEADER BASED TOKEN SEND"),
+    AP_INIT_FLAG("VIDHEADER",
+            ENABLE_VID_HEADER,
             NULL,
             OR_ALL,
-            "Enable module to place vid on response header"),
-    AP_INIT_TAKE1("VidHeaderName",
-            set_vid_header_name,
+            "ENABLE MODULE TO PLACE VID ON RESPONSE HEADER"),
+    AP_INIT_TAKE1("VIDHEADERNAME",
+            SET_VID_HEADER_NAME,
             NULL,
             OR_ALL,
-            "Sets the name of vid response header"),
-    AP_INIT_TAKE1("UuidHeaderName",
-            set_uuid_header_name,
+            "SETS THE NAME OF VID RESPONSE HEADER"),
+    AP_INIT_TAKE1("UUIDHEADERNAME",
+            SET_UUID_HEADER_NAME,
             NULL,
             OR_ALL,
-            "Sets the name of uuid response header"),
-    AP_INIT_FLAG("UuidHeader",
-            enable_uuid_header,
+            "SETS THE NAME OF UUID RESPONSE HEADER"),
+    AP_INIT_FLAG("UUIDHEADER",
+            ENABLE_UUID_HEADER,
             NULL,
             OR_ALL,
-            "Enable module to place uuid on response header"),
-    AP_INIT_FLAG("EnableJsonResponse",
-            enable_json_response,
+            "ENABLE MODULE TO PLACE UUID ON RESPONSE HEADER"),
+    AP_INIT_FLAG("ENABLEJSONRESPONSE",
+            ENABLE_JSON_RESPONSE,
             NULL,
             OR_ALL,
-            "Enable module to return a json response"),
-    AP_INIT_FLAG("EnableCORSHeaders",
-            enable_cors_headers,
+            "ENABLE MODULE TO RETURN A JSON RESPONSE"),
+    AP_INIT_FLAG("PXAPPLYACCESSCONTROLALLOWORIGINBYENVVAR",
+            ENABLE_CORS_HEADERS,
             NULL,
             OR_ALL,
-            "Enable module to return a json response"),
+            "ENABLE MODULE TO APPY CORS HEADRES ON RESPONSE"),
+    AP_INIT_TAKE1("PXAPPLYACCESSCONTROLALLOWEDHEADERS",
+            SET_CORS_ALLOWED_HEADERS,
+            NULL,
+            OR_ALL,
+            "SETS THE ALLOWED HEADERS FOR CORS"),
+    AP_INIT_TAKE1("PXAPPLYACCESSCONTROLALLOWEDMETHODS",
+            SET_CORS_ALLOWED_METHODS,
+            NULL,
+            OR_ALL,
+            "SETS THE ALLOWED METHODS FOR CORS"),
+    AP_INIT_TAKE1("PXAPPLYACCESSCONTROLMAXAGE",
+            Set_cors_max_age,
+            NULL,
+            OR_ALL,
+            "Sets the max age for CORS headers"),
     AP_INIT_TAKE1("CaptchaType",
             set_captcha_type,
             NULL,
