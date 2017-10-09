@@ -78,22 +78,10 @@ extern const char *CALL_REASON_STR[];
 
 char* create_response(px_config *conf, request_context *ctx) {
     // support for cors headers
-    ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_response: cors enabled", ctx->app_id);            
     if (conf->apply_cors_by_envvar) {
-        const char *cors_value = apr_table_get(ctx->r->subprocess_env, "PX_APPLY_CORS");
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_response: cors enabled", ctx->app_id);            
+        const char *cors_value = apr_table_get(ctx->r->subprocess_env, "PX_APPLY_CORS_VALUE");
         if (cors_value) {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: create_response: cors value %s", ctx->app_id, cors_value);            
             apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN, cors_value);        
-            if (conf->cors_allowed_methods) {
-                apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_METHODS, conf->cors_allowed_methods);        
-            }
-            if (conf->cors_allowed_headers) {
-                apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_HEADERS, conf->cors_allowed_headers);        
-            }
-            if (conf->cors_max_age > -1) {
-                apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_MAX_AGE,  apr_itoa(ctx->r->pool, conf->cors_max_age));
-            }     
         }
     }
 
@@ -887,37 +875,6 @@ static const char *enable_cors_headers(cmd_parms *cmd, void *config, int arg) {
     return NULL;
 }
 
-static const char* set_cors_max_age(cmd_parms *cmd, void *config, const char *max_age) {
-    px_config *conf = get_config(cmd, config);
-    if (!conf) {
-        return ERROR_CONFIG_MISSING;
-    }
-
-    conf->cors_max_age = atoi(max_age);
-
-    return NULL;
-}
-
-static const char* set_cors_allowed_methods(cmd_parms *cmd, void *config, const char *allowed_methods) {
-    px_config *conf = get_config(cmd, config);
-    if (!conf) {
-        return ERROR_CONFIG_MISSING;
-    }
-
-    conf->cors_allowed_methods = allowed_methods;
-    return NULL;
-}
-
-static const char* set_cors_allowed_headers(cmd_parms *cmd, void *config, const char *allowed_headers) {
-    px_config *conf = get_config(cmd, config);
-    if (!conf) {
-        return ERROR_CONFIG_MISSING;
-    }
-
-    conf->cors_allowed_headers = allowed_headers;
-    return NULL;
-}
-
 static const char* set_captcha_type(cmd_parms *cmd, void *config, const char *captcha_type) {
     px_config *conf = get_config(cmd, config);
     if (!conf) {
@@ -1207,21 +1164,6 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable module to apply CORS headres on response"),
-    AP_INIT_TAKE1("PXApplyAccessControlAllowedHeaders",
-            set_cors_allowed_headers,
-            NULL,
-            OR_ALL,
-            "Sets the allowed headers for CORS"),
-    AP_INIT_TAKE1("PXApplyAccessControlAllowedMethods",
-            set_cors_allowed_methods,
-            NULL,
-            OR_ALL,
-            "Sets the allowed methods for CORS"),
-    AP_INIT_TAKE1("PXApplyAccessControlMaxAge",
-            set_cors_max_age,
-            NULL,
-            OR_ALL,
-            "Sets the max age for CORS headers"),
     AP_INIT_TAKE1("CaptchaType",
             set_captcha_type,
             NULL,

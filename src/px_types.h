@@ -70,9 +70,6 @@ typedef struct px_config_t {
     const char *uuid_header_name;
     bool json_response_enabled;
     bool apply_cors_by_envvar;
-    const char *cors_allowed_headers;
-    const char *cors_allowed_methods;
-    int cors_max_age;
     captcha_type_t captcha_type;
     bool monitor_mode;
 } px_config;
