@@ -31,7 +31,7 @@ Directives
 | UuidHeader | Enables UUID to be placed on the response headers | Off  | On / Off |
 | UuidHeaderName | Sets the key for the UUID header on the response | X-PX-UUID  | String | Works only when `UuidHeader` is set to On |
 | EnableJsonResponse | Turn on response json when accept headers are `application/json` | false  | bool | On / Off |
-| EnableCORSHeaders | Turns on CORS headers for response, use environment variable `PX_APPLY_CORS_VALUE` to set for the value for `Access-Control-Allow-Origin` | false  | bool | On / Off | [Examples and Use cases](#cors-header)  |
+| EnableCORSHeaders | Turns on CORS headers for response, use environment variable `PX_APPLY_CORS_VALUE` to set for the value for `Access-Control-Allow-Origin` | false  | bool | [Examples and Use cases](#cors-header)  |
 | CaptchaType | Sets the type of which captcha provider to use | reCaptcha  | String | reCaptcha/funCaptcha |
 | EnableTokenViaHeader | Toggles on/off using mobile sdk| true | bool | On / Off |
 | BackgroundActivitySend | Toggles on/off asyncrounus activity reporting | true | bool | On / Off |
