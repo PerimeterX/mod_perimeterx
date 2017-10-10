@@ -31,7 +31,7 @@ Directives
 | UuidHeader | Enables UUID to be placed on the response headers | Off  | On / Off |
 | UuidHeaderName | Sets the key for the UUID header on the response | X-PX-UUID  | String | Works only when `UuidHeader` is set to On |
 | EnableJsonResponse | Turn on response json when accept headers are `application/json` | false  | bool | On / Off |
-| EnableCORSHeaders | Turns on CORS headers for response, use environment variable `PX_APPLY_CORS_VALUE` to set for the value for `Access-Control-Allow-Origin` | false  | bool | [Examples and Use cases](#cors-header)  |
+| EnableCORSHeaders | Turns on CORS headers for response, use environment variable `PX_APPLY_CORS_VALUE` to set for the value for `Access-Control-Allow-Origin` | false  | bool | [Examples and Use cases](#corsheader)  |
 | CaptchaType | Sets the type of which captcha provider to use | reCaptcha  | String | reCaptcha/funCaptcha |
 | EnableTokenViaHeader | Toggles on/off using mobile sdk| true | bool | On / Off |
 | BackgroundActivitySend | Toggles on/off asyncrounus activity reporting | true | bool | On / Off |
@@ -95,7 +95,7 @@ SetEnvIf Request_Method HEAD PX_SKIP_MODULE true
 SetEnvIf User-Agent good-bot PX_SKIP_MODULE true
 ```
 
-#### <a name=""></a>EnableCORSHeaders Examples and Use cases:
+#### <a name="corsheader"></a>EnableCORSHeaders Examples and Use cases:
 By using `mod_setenvif` you can configure a set of rules to set the `PX_APPLY_CORS_VALUE` variable on a request
 If a value is present, its value will be set for the header `Access-Control-Allow-Origin`
 
