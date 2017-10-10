@@ -98,6 +98,7 @@ SetEnvIf User-Agent good-bot PX_SKIP_MODULE true
 #### <a name="corsheader"></a>EnableCORSHeaders Examples and Use cases:
 By using `mod_setenvif` you can configure a set of rules to set the `PX_APPLY_CORS_VALUE` variable on a request
 If a value is present, its value will be set for the header `Access-Control-Allow-Origin`
+Note that the directive `EnableCORSHeaders` must be set to On in order to use `PX_APPLY_CORS_VALUE`
 
 Examples below:
 ```
