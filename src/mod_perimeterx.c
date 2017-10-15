@@ -52,19 +52,21 @@ static const char *SCORE_HEADER_NAME = "X-PX-SCORE";
 static const char *VID_HEADER_NAME = "X-PX-VID";
 static const char *UUID_HEADER_NAME = "X-PX-UUID";
 static const char *ACCEPT_HEADER_NAME = "Accept";
-static const char *CORS_HEADER_NAME = "Access-Control-Allow-Origin";
-static const char *ORIGIN_HEADER_NAME = "Origin";
-static const char *ORIGIN_DEFAULT_VALUE = "*";
+static const char *ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin";
+static const char *ACCESS_CONTROL_ALLOW_METHODS = "Access-Control-Allow-Methods";
+static const char *ACCESS_CONTROL_ALLOW_HEADERS = "Access-Control-Allow-Headers";
+static const char *ACCESS_CONTROL_MAX_AGE = "Access-Control-Max-Age";
 
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const int MAX_CURL_POOL_SIZE = 10000;
 static const int ERR_BUF_SIZE = 128;
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
-static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
+static const char *MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
 static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers, must be greater than zero";
 static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size , must be greater than zero";
 static const char *ERROR_BASE_URL_BEFORE_APP_ID = "mod_perimeterx: BaseUrl was set before AppId";
+static const char *INVALID_MAX_AGE_SIZE = "mod_perimeterx: invalid number for access-control-max-age";
 
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
@@ -76,10 +78,11 @@ extern const char *CALL_REASON_STR[];
 
 char* create_response(px_config *conf, request_context *ctx) {
     // support for cors headers
-    if (conf->cors_headers_enabled) {
-        const char *origin_header = apr_table_get(ctx->r->headers_in, ORIGIN_HEADER_NAME);               
-        const char *origin_value = origin_header ? origin_header : ORIGIN_DEFAULT_VALUE; 
-        apr_table_set(ctx->r->headers_out, CORS_HEADER_NAME, origin_value);        
+    if (conf->apply_cors_by_envvar) {
+        const char *cors_value = apr_table_get(ctx->r->subprocess_env, "PX_APPLY_CORS_VALUE");
+        if (cors_value) {
+            apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN, cors_value);        
+        }
     }
 
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
@@ -868,7 +871,7 @@ static const char *enable_cors_headers(cmd_parms *cmd, void *config, int arg) {
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    conf->cors_headers_enabled = arg ? true : false;
+    conf->apply_cors_by_envvar = arg ? true : false;
     return NULL;
 }
 
@@ -938,7 +941,7 @@ static void *create_config(apr_pool_t *p) {
         conf->uuid_header_name = UUID_HEADER_NAME;
         conf->vid_header_name = VID_HEADER_NAME;
         conf->json_response_enabled = false;
-        conf->cors_headers_enabled = false;
+        conf->apply_cors_by_envvar = false;
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
         conf->monitor_mode = false;
         conf->enable_token_via_header = true;
@@ -1148,11 +1151,16 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable module to return a json response"),
+    AP_INIT_FLAG("PXApplyAccessControlAllowOriginByEnvvar",
+            enable_cors_headers,
+            NULL,
+            OR_ALL,
+            "Enable module to apply CORS headres on response"),
     AP_INIT_FLAG("EnableCORSHeaders",
             enable_cors_headers,
             NULL,
             OR_ALL,
-            "Enable module to return a json response"),
+            "Enable module to apply CORS headres on response"),
     AP_INIT_TAKE1("CaptchaType",
             set_captcha_type,
             NULL,

@@ -69,7 +69,7 @@ typedef struct px_config_t {
     const char *vid_header_name;
     const char *uuid_header_name;
     bool json_response_enabled;
-    bool cors_headers_enabled;
+    bool apply_cors_by_envvar;
     captcha_type_t captcha_type;
     bool monitor_mode;
 } px_config;
