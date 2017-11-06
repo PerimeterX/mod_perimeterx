@@ -39,6 +39,7 @@ typedef struct px_config_t {
     const char *risk_api_url;
     const char *captcha_api_url;
     const char *activities_api_url;
+    const char *telemetry_api_url;
     const char *css_ref;
     const char *js_ref;
     const char *custom_logo;

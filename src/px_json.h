@@ -8,7 +8,7 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf);
 char *create_captcha_payload(const request_context *ctx, const px_config *conf);
 char *create_mobile_response(px_config *cfg, request_context *ctx, const char *compiled_html);
 char *create_json_response(px_config *cfg, request_context *ctx);
-char *config_to_json_string(px_config *cfg);
+char *config_to_json_string(px_config *cfg, char *update_reason);
 
 remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_str, px_config *conf, server_rec *server);
 captcha_response *parse_captcha_response(const char* captcha_response_str, const request_context *ctx);

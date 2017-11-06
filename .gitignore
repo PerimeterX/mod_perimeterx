@@ -1,4 +1,6 @@
 .DS_Store
+core
+src/core
 *.so
 *.swp
 *.iml

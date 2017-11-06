@@ -41,6 +41,7 @@ static const char *DEFAULT_BASE_URL = "https://sapi-%s.perimeterx.net";
 static const char *DEFAULT_REMOTE_CONFIG_URL = "https://px-conf-mgmt.perimeterx.net/api/v1/enforcer";
 static const char *RISK_API = "/api/v2/risk";
 static const char *CAPTCHA_API = "/api/v2/risk/captcha";
+static const char *TELEMETRY_API = "/api/v2/risk/telemetry";
 static const char *ACTIVITIES_API = "/api/v1/collector/s2s";
 static const char *HEALTH_CHECK_API = "/api/v1/kpi/status";
 
@@ -69,6 +70,7 @@ static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid backgr
 
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
+static const char *ENFORCER_TELEMETRY_ACTIVITY_TYPE = "enforcer_telemetry";
 
 #ifdef DEBUG
 extern const char *BLOCK_REASON_STR[];
@@ -345,6 +347,18 @@ static apr_status_t create_health_check(apr_pool_t *p, server_rec *s, px_config 
     return rv;
 }
 
+void telemetry_activity_send_init(server_rec *s, px_config *cfg) {
+    const char *activity_type = ENFORCER_TELEMETRY_ACTIVITY_TYPE;
+    char *activity = config_to_json_string(cfg, "initial_config");
+    if (!activity) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "[%s]: telemetry_activity_send_init: create telemetry activity failed", cfg->app_id);
+        return;
+    }
+
+    post_telemetry(cfg->telemetry_api_url, activity, cfg->api_timeout_ms, cfg, s, NULL, NULL);
+    free(activity);
+}
+
 static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *s, px_config *cfg) {
     apr_status_t rv;
 
@@ -521,9 +535,6 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
     for (server_rec *vs = s; vs; vs = vs->next) {
         vs_num = vs_num + 1;
         px_config *cfg = ap_get_module_config(vs->module_config, &perimeterx_module);
-        char *config_json = config_to_json_string(cfg);
-
-        //ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "============================\n\n[%s] configuration: %s\n\n============================", vs->defn_name, config_json);
 
         rv = apr_pool_create(&cfg->pool, vs->process->pool);
         if (rv != APR_SUCCESS) {
@@ -532,6 +543,9 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
         }
 
         cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size);
+
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for telemetry_activity_send");
+        telemetry_activity_send_init(vs, cfg);
 
         if (cfg->background_activity_send) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for background_activity_send");
@@ -612,6 +626,7 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
+    conf->telemetry_api_url = apr_pstrcat(cmd->pool, conf->base_url, TELEMETRY_API, NULL);
     return NULL;
 }
 
@@ -1092,6 +1107,7 @@ static void *create_config(apr_pool_t *p) {
         conf->risk_api_url = apr_pstrcat(p, conf->base_url, RISK_API, NULL);
         conf->captcha_api_url = apr_pstrcat(p, conf->base_url, CAPTCHA_API, NULL);
         conf->activities_api_url = apr_pstrcat(p, conf->base_url, ACTIVITIES_API, NULL);
+        conf->telemetry_api_url = apr_pstrcat(p, conf->base_url, TELEMETRY_API, NULL);
         conf->auth_token = "";
         conf->auth_header = "";
         conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
