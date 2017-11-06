@@ -347,9 +347,9 @@ static apr_status_t create_health_check(apr_pool_t *p, server_rec *s, px_config 
     return rv;
 }
 
-void telemetry_activity_send_init(server_rec *s, px_config *cfg) {
+void telemetry_activity_send_init(server_rec *s, px_config *cfg, char *update_reason) {
     const char *activity_type = ENFORCER_TELEMETRY_ACTIVITY_TYPE;
-    char *activity = config_to_json_string(cfg, "initial_config");
+    char *activity = config_to_json_string(cfg, update_reason);
     if (!activity) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "[%s]: telemetry_activity_send_init: create telemetry activity failed", cfg->app_id);
         return;
@@ -440,6 +440,7 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
                 conf->sensitive_header_keys = conf->remote_conf->sensitive_header_keys;
                 // ---------------------------------------------------
                 apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+                telemetry_activity_send_init(remote_conf_data->server, conf, "remote_config");
             }
         } else if (!conf->remote_conf || !conf->remote_conf->checksum) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: remote configurations: failed to get configuration and no initial remote configuration, disabling module until new config will be found", conf->app_id);
@@ -545,7 +546,7 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
         cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size);
 
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for telemetry_activity_send");
-        telemetry_activity_send_init(vs, cfg);
+        telemetry_activity_send_init(vs, cfg, "initial_config");
 
         if (cfg->background_activity_send) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for background_activity_send");
