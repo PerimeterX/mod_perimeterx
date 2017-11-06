@@ -78,9 +78,9 @@ extern const char *CALL_REASON_STR[];
 char* create_response(px_config *conf, request_context *ctx) {
     // support for cors headers
     if (conf->cors_headers_enabled) {
-        const char *origin_header = apr_table_get(ctx->r->headers_in, ORIGIN_HEADER_NAME);               
-        const char *origin_value = origin_header ? origin_header : ORIGIN_DEFAULT_VALUE; 
-        apr_table_set(ctx->r->headers_out, CORS_HEADER_NAME, origin_value);        
+        const char *origin_header = apr_table_get(ctx->r->headers_in, ORIGIN_HEADER_NAME);
+        const char *origin_value = origin_header ? origin_header : ORIGIN_DEFAULT_VALUE;
+        apr_table_set(ctx->r->headers_out, CORS_HEADER_NAME, origin_value);
     }
 
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
@@ -151,7 +151,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
         return OK;
     }
 
-    // Decline internal redirects and subrequests 
+    // Decline internal redirects and subrequests
     if (r->prev) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_handle_request: request declined - interal redirect or subrequest", conf->app_id);
 	    return DECLINED;
@@ -382,7 +382,7 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
         return NULL;
     }
     px_config *conf = remote_conf_data->config;
-    
+
     CURL *curl = curl_easy_init();
 
     if (!curl) {
@@ -394,7 +394,7 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
     while (!conf->rc_should_exit_thread) {
         apr_pool_t *rc_pool = NULL;
         apr_pool_create(&rc_pool, NULL);
-    
+
         const char *checksum = NULL;
         if (conf->remote_conf && conf->remote_conf->checksum){
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: adding checksum %s", conf->app_id, conf->remote_conf->checksum);
@@ -405,7 +405,7 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
 
         char *remote_config_str;
         CURLcode status = get_request_helper(curl, url, conf->api_timeout_ms, conf, remote_conf_data->server, &remote_config_str);
-        
+
         if (status == CURLE_OK) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: found new configurations", conf->app_id);
             remote_config *remote_conf = parse_remote_config(rc_pool, remote_config_str, conf, remote_conf_data->server);
@@ -414,27 +414,27 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
                 // Lock mutex for incoming requests
                 apr_thread_rwlock_wrlock(conf->remote_config_rw_mutex);
                 // ---------------------------------------------------
-                // all thread safe operations should be here 
+                // all thread safe operations should be here
                 conf->remote_conf = remote_conf;
                 conf->module_enabled = conf->remote_conf->module_enabled;
                 conf->payload_key = conf->remote_conf->cookie_key;
                 conf->blocking_score = conf->remote_conf->blocking_score;
                 conf->app_id = conf->remote_conf->app_id;
-                conf->monitor_mode = !strcmp(conf->remote_conf->module_mode, "blocking") ? false : true; 
+                conf->monitor_mode = !strcmp(conf->remote_conf->module_mode, "blocking") ? false : true;
                 conf->api_timeout_ms = conf->remote_conf->risk_timeout;
                 conf->ip_header_keys = conf->remote_conf->ip_header_keys;
                 conf->sensitive_header_keys = conf->remote_conf->sensitive_header_keys;
                 // ---------------------------------------------------
-                apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);        
+                apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
             }
         } else if (!conf->remote_conf || !conf->remote_conf->checksum) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: remote configurations: failed to get configuration and no initial remote configuration, disabling module until new config will be found", conf->app_id);
             apr_thread_rwlock_wrlock(conf->remote_config_rw_mutex);
-            // all thread safe operations should be here 
+            // all thread safe operations should be here
             conf->module_enabled = false;
-            // all thread safe operations should be here 
-            apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);        
-            
+            // all thread safe operations should be here
+            apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+
         }
         // clear the pool;
         apr_pool_destroy(rc_pool);
@@ -496,10 +496,10 @@ static apr_status_t px_child_exit(void *data) {
         cfg->should_exit_thread = true;
         apr_thread_cond_signal(cfg->health_check_cond);
     }
-    
+
     if (cfg->remote_config_enabled) {
-        cfg->rc_should_exit_thread = true;        
-        apr_thread_cond_signal(cfg->remote_config_cond);        
+        cfg->rc_should_exit_thread = true;
+        apr_thread_cond_signal(cfg->remote_config_cond);
     }
 
     // terminate the queue and wake up all idle threads
@@ -521,6 +521,9 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
     for (server_rec *vs = s; vs; vs = vs->next) {
         vs_num = vs_num + 1;
         px_config *cfg = ap_get_module_config(vs->module_config, &perimeterx_module);
+        char *config_json = config_to_json_string(cfg);
+
+        //ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "============================\n\n[%s] configuration: %s\n\n============================", vs->defn_name, config_json);
 
         rv = apr_pool_create(&cfg->pool, vs->process->pool);
         if (rv != APR_SUCCESS) {
@@ -996,7 +999,7 @@ static const char* set_captcha_type(cmd_parms *cmd, void *config, const char *ca
 
     if (!strcmp(captcha_type,"funCaptcha")) {
         conf->captcha_type = CAPTCHA_TYPE_FUNCAPTCHA;
-    } else { 
+    } else {
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
     }
 
@@ -1055,7 +1058,7 @@ static const char *set_sensitive_headers(cmd_parms *cmd, void *config, const cha
 
 static void acquire_read_lock(px_config *conf){
     if (conf->remote_config_enabled){
-        apr_thread_rwlock_rdlock(conf->remote_config_rw_mutex);	
+        apr_thread_rwlock_rdlock(conf->remote_config_rw_mutex);
     }
 }
 
@@ -1117,7 +1120,7 @@ static void *create_config(apr_pool_t *p) {
         conf->enable_token_via_header = true;
         conf->remote_config_enabled = false;
         conf->remote_config_url = DEFAULT_REMOTE_CONFIG_URL;
-        conf->remote_config_interval_ms = 5000000L; 
+        conf->remote_config_interval_ms = 5000000L;
     }
     return conf;
 }
