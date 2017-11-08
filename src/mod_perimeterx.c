@@ -357,8 +357,8 @@ void telemetry_activity_send(server_rec *s, px_config *cfg, const char *update_r
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "[%s]: telemetry_activity_send: create telemetry activity failed", cfg->app_id);
         return;
     }
-
     post_request(cfg->telemetry_api_url, activity, cfg->api_timeout_ms, cfg, s, NULL, NULL);
+    free(activity);
 }
 
 static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *s, px_config *cfg) {
@@ -629,6 +629,7 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
+    conf->telemetry_api_url = apr_pstrcat(cmd->pool, conf->base_url, TELEMETRY_API, NULL);
     return NULL;
 }
 
