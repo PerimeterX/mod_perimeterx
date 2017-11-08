@@ -15,7 +15,7 @@ static const char *ACCEPT_JSON_TYPE = "Accept: application/json";
 static const char *EXPECT = "Expect:";
 static const char *MOBILE_SDK_HEADER = "X-PX-AUTHORIZATION";
 
-void update_and_notify_health_check(px_config *conf, server_rec *server) {
+void update_and_notify_health_check(px_config *conf, const server_rec *server) {
     if (!conf->px_health_check) {
         return;
     }
@@ -86,7 +86,7 @@ CURLcode get_request_helper(CURL* curl, const char *url, long timeout, px_config
 
 
 //post 
-CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, long timeout, px_config *conf, server_rec *server, char **response_data) {
+CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, long timeout, px_config *conf, const server_rec *server, char **response_data) {
     struct response_t response;
     struct curl_slist *headers = NULL;
     long status_code;

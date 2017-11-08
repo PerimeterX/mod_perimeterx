@@ -433,7 +433,7 @@ char *create_json_response(px_config *cfg, request_context *ctx) {
     return request_str;
 }
 
-char* config_to_json_string(px_config *cfg, char *update_reason) {
+char* config_to_json_string(px_config *cfg, const char *update_reason) {
     json_error_t error;
     json_t *ctx_json = json_object();
     json_t *details_json = json_object();
@@ -453,7 +453,6 @@ char* config_to_json_string(px_config *cfg, char *update_reason) {
     json_object_set(config_json, "risk_api_url", json_string(cfg->risk_api_url));
     json_object_set(config_json, "captcha_api_url", json_string(cfg->captcha_api_url));
     json_object_set(config_json, "activities_api_url", json_string(cfg->activities_api_url));
-    json_object_set(config_json, "auth_token", json_string(cfg->auth_token));
     json_object_set(config_json, "auth_header", json_string(cfg->auth_header));
     json_object_set(config_json, "routes_whitelist", config_array_to_json_array(cfg->routes_whitelist));
     json_object_set(config_json, "useragents_whitelist", config_array_to_json_array(cfg->useragents_whitelist));
@@ -482,7 +481,6 @@ char* config_to_json_string(px_config *cfg, char *update_reason) {
     json_object_set(config_json, "remote_config_enabled", json_boolean(cfg->remote_config_enabled));
     json_object_set(config_json, "remote_config_url", json_string(cfg->remote_config_url));
     json_object_set(config_json, "remote_config_interval_ms", json_integer(cfg->remote_config_interval_ms));
-    json_object_set(config_json, "cookie_key", json_string(cfg->payload_key));
     json_object_set(config_json, "custom_logo", json_string(cfg->custom_logo));
     json_object_set(config_json, "css_ref", json_string(cfg->css_ref));
     json_object_set(config_json, "js_ref", json_string(cfg->js_ref));

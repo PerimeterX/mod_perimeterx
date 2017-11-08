@@ -109,7 +109,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: verify_captcha: request - (%s)", ctx->app_id, payload);
 
     char *response_str = NULL;
-    CURLcode status = post_request(conf->captcha_api_url, payload, conf->captcha_timeout, conf, ctx, &response_str, &ctx->api_rtt);
+    CURLcode status = post_request(conf->captcha_api_url, payload, conf->captcha_timeout, conf, ctx->r->server, &response_str, &ctx->api_rtt);
     free(payload);
     if (status == CURLE_OK) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server,"[%s]: verify_captcha: server response (%s)", ctx->app_id, response_str);
@@ -191,7 +191,7 @@ risk_response* risk_api_get(request_context *ctx, px_config *conf) {
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: risk payload: %s", ctx->app_id, risk_payload);
     char *risk_response_str;
-    CURLcode status = post_request(conf->risk_api_url, risk_payload, conf->api_timeout_ms, conf, ctx, &risk_response_str, &ctx->api_rtt);
+    CURLcode status = post_request(conf->risk_api_url, risk_payload, conf->api_timeout_ms, conf, ctx->r->server, &risk_response_str, &ctx->api_rtt);
     ctx->made_api_call = true;
     free(risk_payload);
     if (status == CURLE_OK) {

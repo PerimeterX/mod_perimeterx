@@ -71,6 +71,9 @@ static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid backgr
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
 static const char *ENFORCER_TELEMETRY_ACTIVITY_TYPE = "enforcer_telemetry";
+static const char *MONITOR_MODE_BLOCK = "blocking";
+static const char *UPDATE_REASON_REMOTE_CONFIG = "remote_config";
+static const char *UPDATE_REASON_INITIAL_CONFIG = "initial_config";
 
 #ifdef DEBUG
 extern const char *BLOCK_REASON_STR[];
@@ -141,7 +144,7 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
         if (conf->background_activity_send) {
             apr_queue_push(conf->activity_queue, activity);
         } else {
-            post_request(conf->activities_api_url, activity, conf->api_timeout_ms, conf, ctx, NULL, NULL);
+            post_request(conf->activities_api_url, activity, conf->api_timeout_ms, conf, ctx->r->server, NULL, NULL);
             free(activity);
         }
     }
@@ -347,16 +350,15 @@ static apr_status_t create_health_check(apr_pool_t *p, server_rec *s, px_config 
     return rv;
 }
 
-void telemetry_activity_send_init(server_rec *s, px_config *cfg, char *update_reason) {
+void telemetry_activity_send(server_rec *s, px_config *cfg, const char *update_reason) {
     const char *activity_type = ENFORCER_TELEMETRY_ACTIVITY_TYPE;
     char *activity = config_to_json_string(cfg, update_reason);
     if (!activity) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "[%s]: telemetry_activity_send_init: create telemetry activity failed", cfg->app_id);
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "[%s]: telemetry_activity_send: create telemetry activity failed", cfg->app_id);
         return;
     }
 
-    post_telemetry(cfg->telemetry_api_url, activity, cfg->api_timeout_ms, cfg, s, NULL, NULL);
-    free(activity);
+    post_request(cfg->telemetry_api_url, activity, cfg->api_timeout_ms, cfg, s, NULL, NULL);
 }
 
 static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *s, px_config *cfg) {
@@ -434,13 +436,13 @@ static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *d
                 conf->payload_key = conf->remote_conf->cookie_key;
                 conf->blocking_score = conf->remote_conf->blocking_score;
                 conf->app_id = conf->remote_conf->app_id;
-                conf->monitor_mode = !strcmp(conf->remote_conf->module_mode, "blocking") ? false : true;
+                conf->monitor_mode = !strcmp(conf->remote_conf->module_mode, MONITOR_MODE_BLOCK) ? false : true;
                 conf->api_timeout_ms = conf->remote_conf->risk_timeout;
                 conf->ip_header_keys = conf->remote_conf->ip_header_keys;
                 conf->sensitive_header_keys = conf->remote_conf->sensitive_header_keys;
                 // ---------------------------------------------------
                 apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
-                telemetry_activity_send_init(remote_conf_data->server, conf, "remote_config");
+                telemetry_activity_send(remote_conf_data->server, conf, UPDATE_REASON_REMOTE_CONFIG);
             }
         } else if (!conf->remote_conf || !conf->remote_conf->checksum) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: remote configurations: failed to get configuration and no initial remote configuration, disabling module until new config will be found", conf->app_id);
@@ -546,7 +548,7 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
         cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size);
 
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for telemetry_activity_send");
-        telemetry_activity_send_init(vs, cfg, "initial_config");
+        telemetry_activity_send(vs, cfg, UPDATE_REASON_INITIAL_CONFIG);
 
         if (cfg->background_activity_send) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for background_activity_send");
@@ -627,7 +629,6 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
-    conf->telemetry_api_url = apr_pstrcat(cmd->pool, conf->base_url, TELEMETRY_API, NULL);
     return NULL;
 }
 
