@@ -87,7 +87,7 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         json_object_set_new(details, "block_uuid", json_string(ctx->uuid));
     } else {
         // adding decrypted payload to page_requested activity
-        if (ctx->px_payload) {
+        if (ctx->px_payload_decrypted) {
             json_object_set_new(details, "px_cookie", json_string(ctx->px_payload_decrypted));
         }
 
@@ -153,6 +153,18 @@ json_t *headers_to_json_helper(const apr_array_header_t *arr,apr_array_header_t 
     return j_headers;
 }
 
+json_t *config_array_to_json_array(const apr_array_header_t *arr) {
+    json_t *j_headers = json_array();
+    // Extract all headers and jsonfy it
+    if (arr) {
+        for (int i = 0; i < arr->nelts; i++) {
+            char *h = APR_ARRAY_IDX(arr, i, char*);
+            json_array_append_new(j_headers, json_string(h));
+        }
+    }
+    return j_headers;
+}
+
 static apr_array_header_t *json_arr_to_arr_helper(const json_t *j_arr, apr_pool_t *pool, px_config *conf, server_rec *server) {
     if(!json_is_array(j_arr)){
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: json_arr_to_arr_helper: failed to to get array", conf->app_id);
@@ -161,14 +173,14 @@ static apr_array_header_t *json_arr_to_arr_helper(const json_t *j_arr, apr_pool_
 
     size_t j_size = json_array_size(j_arr);
     apr_array_header_t *apr_arr = apr_array_make(pool, j_size, sizeof(const char*));
-    
+
     for (int i = 0; i < j_size; i++) {
         json_t *elem = json_array_get(j_arr, i);
         const char** entry = apr_array_push(apr_arr);
         *entry = apr_pstrdup(pool, json_string_value(elem));
         ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server, "[%s]: json_arr_to_arr_helper: json data is %s", conf->app_id, json_string_value(elem));
     }
-    
+
     return apr_arr;
 }
 
@@ -326,10 +338,10 @@ remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_s
     }
 
     remote_config *remote_conf = apr_palloc(pool, sizeof(remote_config));
-    
+
     if (remote_conf) {
         remote_conf->module_enabled = module_enabled ? true : false;
-        remote_conf->cookie_key = apr_pstrdup(pool, cookie_key); 
+        remote_conf->cookie_key = apr_pstrdup(pool, cookie_key);
         remote_conf->blocking_score = blocking_score;
         remote_conf->app_id = apr_pstrdup(pool, app_id);
         remote_conf->module_mode = apr_pstrdup(pool, module_mode);
@@ -345,7 +357,7 @@ remote_config *parse_remote_config(apr_pool_t *pool, const char* remote_config_s
     }
 
     json_decref(j_response);
-    
+
     return remote_conf;
 }
 
@@ -419,6 +431,81 @@ char *create_json_response(px_config *cfg, request_context *ctx) {
     char *request_str = json_dumps(j_response, JSON_COMPACT);
     json_decref(j_response);
     return request_str;
+}
+
+char* config_to_json_string(px_config *cfg, const char *update_reason) {
+    json_error_t error;
+    json_t *ctx_json = json_object();
+    json_t *details_json = json_object();
+    json_t *config_json = json_object();
+
+    json_object_set_new(config_json, "app_id", json_string(cfg->app_id));
+    json_object_set_new(config_json, "module_enabled", json_boolean(cfg->module_enabled));
+    json_object_set_new(config_json, "api_timeout_ms", json_integer(cfg->api_timeout_ms));
+    json_object_set_new(config_json, "captcha_timeout", json_integer(cfg->captcha_timeout));
+    json_object_set_new(config_json, "send_page_activities", json_boolean(cfg->send_page_activities));
+    json_object_set_new(config_json, "blocking_score", json_integer(cfg->blocking_score));
+    json_object_set_new(config_json, "captcha_enabled", json_boolean(cfg->captcha_enabled));
+    json_object_set_new(config_json, "module_version", json_string(cfg->module_version));
+    json_object_set_new(config_json, "skip_mod_by_envvar", json_boolean(cfg->skip_mod_by_envvar));
+    json_object_set_new(config_json, "curl_pool_size", json_integer(cfg->curl_pool_size));
+    json_object_set_new(config_json, "base_url", json_string(cfg->base_url));
+    json_object_set_new(config_json, "risk_api_url", json_string(cfg->risk_api_url));
+    json_object_set_new(config_json, "captcha_api_url", json_string(cfg->captcha_api_url));
+    json_object_set_new(config_json, "activities_api_url", json_string(cfg->activities_api_url));
+    json_object_set_new(config_json, "auth_header", json_string(cfg->auth_header));
+    json_object_set_new(config_json, "routes_whitelist", config_array_to_json_array(cfg->routes_whitelist));
+    json_object_set_new(config_json, "useragents_whitelist", config_array_to_json_array(cfg->useragents_whitelist));
+    json_object_set_new(config_json, "custom_file_ext_whitelist", config_array_to_json_array(cfg->custom_file_ext_whitelist));
+    json_object_set_new(config_json, "ip_header_keys", config_array_to_json_array(cfg->ip_header_keys));
+    json_object_set_new(config_json, "sensitive_header_keys", config_array_to_json_array(cfg->sensitive_header_keys));
+    json_object_set_new(config_json, "sensitive_routes", config_array_to_json_array(cfg->sensitive_routes));
+    json_object_set_new(config_json, "enabled_hostnames", config_array_to_json_array(cfg->enabled_hostnames));
+    json_object_set_new(config_json, "sensitive_routes_prefix", config_array_to_json_array(cfg->sensitive_routes_prefix));
+    json_object_set_new(config_json, "background_activity_send", json_boolean(cfg->background_activity_send));
+    json_object_set_new(config_json, "background_activity_workers", json_integer(cfg->background_activity_workers));
+    json_object_set_new(config_json, "background_activity_queue_size", json_integer(cfg->background_activity_queue_size));
+    json_object_set_new(config_json, "px_errors_threshold", json_integer(cfg->px_errors_threshold));
+    json_object_set_new(config_json, "health_check_interval", json_integer(cfg->health_check_interval));
+    json_object_set_new(config_json, "px_health_check", json_boolean(cfg->px_health_check));
+    json_object_set_new(config_json, "score_header_name", json_string(cfg->score_header_name));
+    json_object_set_new(config_json, "vid_header_enabled", json_boolean(cfg->vid_header_enabled));
+    json_object_set_new(config_json, "uuid_header_enabled", json_boolean(cfg->uuid_header_enabled));
+    json_object_set_new(config_json, "uuid_header_name", json_string(cfg->uuid_header_name));
+    json_object_set_new(config_json, "vid_header_name", json_string(cfg->vid_header_name));
+    json_object_set_new(config_json, "json_response_enabled", json_boolean(cfg->json_response_enabled));
+    json_object_set_new(config_json, "cors_headers_enabled", json_boolean(cfg->cors_headers_enabled));
+    json_object_set_new(config_json, "captcha_type", json_integer(cfg->captcha_type));
+    json_object_set_new(config_json, "monitor_mode", json_boolean(cfg->monitor_mode));
+    json_object_set_new(config_json, "enable_token_via_header", json_boolean(cfg->enable_token_via_header));
+    json_object_set_new(config_json, "remote_config_enabled", json_boolean(cfg->remote_config_enabled));
+    json_object_set_new(config_json, "remote_config_url", json_string(cfg->remote_config_url));
+    json_object_set_new(config_json, "remote_config_interval_ms", json_integer(cfg->remote_config_interval_ms));
+    json_object_set_new(config_json, "custom_logo", json_string(cfg->custom_logo));
+    json_object_set_new(config_json, "css_ref", json_string(cfg->css_ref));
+    json_object_set_new(config_json, "js_ref", json_string(cfg->js_ref));
+    json_object_set_new(config_json, "block_page_url", json_string(cfg->block_page_url));
+    json_object_set_new(config_json, "proxy_url", json_string(cfg->proxy_url));
+    json_object_set_new(config_json, "score_header_enabled", json_boolean(cfg->score_header_enabled));
+
+    json_object_set_new(details_json, "module_version", json_string(cfg->module_version));
+    json_object_set_new(details_json, "update_reason", json_string(update_reason));
+    json_object_set_new(details_json, "enforcer_configs", config_json);
+
+
+    apr_time_t timems = apr_time_now() / 1000;
+    char tztimems[20];
+    snprintf(tztimems, sizeof(tztimems), "%"APR_TIME_T_FMT, timems);
+
+    json_object_set_new(ctx_json, "type", json_string("enforcer_telemetry"));
+    json_object_set_new(ctx_json, "timestamp", json_string(tztimems));
+    json_object_set_new(ctx_json, "app_id", json_string(cfg->app_id));
+    json_object_set_new(ctx_json, "details", details_json);
+
+    char *config_str = json_dumps(ctx_json, JSON_ENCODE_ANY);
+    json_decref(ctx_json);
+
+    return config_str;
 }
 
 #ifdef DEBUG
