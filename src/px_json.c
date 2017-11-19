@@ -81,7 +81,7 @@ char *create_activity(const char *activity_type, const px_config *conf, const re
         }
 
         if (ctx->api_rtt) {
-            json_object_set_new(details, "risk_rtt", json_integer(ctx->api_rtt * 1000)); // seconds to ms
+            json_object_set_new(details, "risk_rtt", json_real(ctx->api_rtt * 1000)); // seconds to ms
         }
 
         // adding uuid to page_requested activity
@@ -216,7 +216,7 @@ char *create_captcha_payload(const request_context *ctx, const px_config *conf) 
         json_object_set_new(j_captcha, "hostname", json_string(ctx->hostname));
     }
     if (ctx->api_rtt) {
-        json_object_set_new(j_captcha, "risk_rtt", json_integer(ctx->api_rtt));
+        json_object_set_new(j_captcha, "risk_rtt", json_real(ctx->api_rtt));
     }
 
     json_t *j_additional = json_pack("{s:s}",

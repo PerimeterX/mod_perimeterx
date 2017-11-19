@@ -1,10 +1,10 @@
 #include "px_utils.h"
 
+#include <stdlib.h>
 #include <apr_atomic.h>
-
-#include <arpa/inet.h>
 #include <apr_strings.h>
 #include <http_log.h>
+#include <apr_network_io.h>
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -53,7 +53,6 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
     }
     CURLcode status = curl_easy_perform(curl);
     curl_slist_free_all(headers);
-    size_t len;
     if (status == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {
@@ -121,12 +120,13 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
         if (ip) {
             // extracting the first ip if there header contains a list of ip separated by commas
             const char *first_ip = extract_first_ip(r->pool, ip);
-            // validation ip
-            in_addr_t addr;
-            struct in6_addr ipv6_addr;
-            if (inet_pton(AF_INET, first_ip, &addr) == 1 || inet_pton(AF_INET6, first_ip, &ipv6_addr) == 1) {
-                return first_ip;
-            }
+			apr_sockaddr_t *s;
+			apr_status_t ipValidationStatus = apr_sockaddr_info_get(&s, first_ip, APR_UNSPEC, 0,  APR_IPV4_ADDR_OK, r->pool);
+			if (ipValidationStatus == APR_SUCCESS) {
+				fprintf(stderr, "success\n");
+			} else {
+				fprintf(stderr, "fail\n");
+			}
         }
     }
     // no valid ip found in IPHeader values - using socket_ip as a fallback
@@ -153,7 +153,7 @@ int extract_payload_from_header(apr_pool_t *pool, apr_table_t *headers, const ch
             *payload3 = prefix;
             return 0;
         }
-        int version = apr_atoi64(prefix);
+        int version = atoi(prefix);
         switch (version) {
             case 1:
                 *payload1 = postfix;

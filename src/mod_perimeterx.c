@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <syslog.h>
 #include <jansson.h>
 #include <curl/curl.h>
 #include <openssl/err.h>
@@ -59,7 +60,7 @@ static const char *ORIGIN_WILDCARD_VALUE = "*";
 
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const int MAX_CURL_POOL_SIZE = 10000;
-static const int ERR_BUF_SIZE = 128;
+#define ERR_BUF_SIZE (128)
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
 static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
@@ -269,7 +270,6 @@ static void *APR_THREAD_FUNC health_check(apr_thread_t *thd, void *data) {
 
     const char *health_check_url = apr_pstrcat(hc->server->process->pool, hc->config->base_url, HEALTH_CHECK_API, NULL);
     CURL *curl = curl_easy_init();
-    CURLcode res;
     while (!conf->should_exit_thread) {
         // wait for condition and reset errors count on internal
         apr_thread_mutex_lock(conf->health_check_cond_mutex);
@@ -391,7 +391,7 @@ static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *
         return rv;
     }
 
-    for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
+    for (int i = 0; i < cfg->background_activity_workers; ++i) {
         rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, consumer_data, 0, NULL);
         if (rv != APR_SUCCESS) {
             ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "failed to push background activity consumer");
@@ -423,10 +423,11 @@ static apr_status_t px_child_exit(void *data) {
         }
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_child_exit: cleanup finished");
+	return APR_SUCCESS;
 }
 
 static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
-    apr_status_t rv;
+    apr_status_t rv = APR_SUCCESS;
     
     // init each virtual host
     for (server_rec *vs = s; vs; vs = vs->next) {
