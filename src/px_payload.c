@@ -217,8 +217,8 @@ void digest_payload(const risk_payload *payload, request_context *ctx, const cha
     if (ctx->px_payload_version == 3) {
         digest_payload3(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
     } else { 
-		digest_payload1(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
-	}
+	digest_payload1(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
+    }
 }
 
 risk_payload *decode_payload(const char *px_payload, const char *payload_key, request_context *r_ctx) {
