@@ -8,6 +8,10 @@
 #include <curl/curl.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/ssl.h>
+#include <openssl/opensslv.h>
+#include <openssl/crypto.h>
+#include <openssl/engine.h>
 #include <httpd.h>
 #include <http_config.h>
 #include <http_protocol.h>
@@ -23,6 +27,7 @@
 #include <apr_base64.h>
 #include <apr_time.h>
 #include <apr_thread_rwlock.h>
+#include <apr_uri.h>
 
 #include "px_utils.h"
 #include "px_types.h"
@@ -50,14 +55,14 @@ static const char *CONTENT_TYPE_JSON = "application/json";
 static const char *CONTENT_TYPE_HTML = "text/html";
 
 // constants
-static const char *PERIMETERX_MODULE_VERSION = "Apache Module v2.8.0-rc.4";
+static const char *PERIMETERX_MODULE_VERSION = "Apache Module v2.8.0-rc.9";
 static const char *SCORE_HEADER_NAME = "X-PX-SCORE";
 static const char *VID_HEADER_NAME = "X-PX-VID";
 static const char *UUID_HEADER_NAME = "X-PX-UUID";
 static const char *ACCEPT_HEADER_NAME = "Accept";
-static const char *CORS_HEADER_NAME = "Access-Control-Allow-Origin";
+static const char *ACCESS_CONTROL_ALLOW_ORIGIN_HEADER_NAME = "Access-Control-Allow-Origin";
 static const char *ORIGIN_HEADER_NAME = "Origin";
-static const char *ORIGIN_DEFAULT_VALUE = "*";
+static const char *ORIGIN_WILDCARD_VALUE = "*";
 
 static const char *CAPTCHA_COOKIE = "_pxCaptcha";
 static const int MAX_CURL_POOL_SIZE = 10000;
@@ -65,8 +70,9 @@ static const int ERR_BUF_SIZE = 128;
 
 static const char *ERROR_CONFIG_MISSING = "mod_perimeterx: config structure not allocated";
 static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize can not exceed 10000";
-static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers, must be greater than zero";
-static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size , must be greater than zero";
+static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers - must be greater than zero";
+static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size - must be greater than zero";
+static const char *ERROR_BASE_URL_BEFORE_APP_ID = "mod_perimeterx: BaseUrl was set before AppId";
 
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
@@ -75,17 +81,77 @@ static const char *MONITOR_MODE_BLOCK = "blocking";
 static const char *UPDATE_REASON_REMOTE_CONFIG = "remote_config";
 static const char *UPDATE_REASON_INITIAL_CONFIG = "initial_config";
 
+static const char *LOGGER_DEBUG_FORMAT = "[PerimeterX - DEBUG][%s] - %s";
+static const char *LOGGER_ERROR_FORMAT = "[PerimeterX - ERROR][%s] - %s";
+
+
 #ifdef DEBUG
 extern const char *BLOCK_REASON_STR[];
 extern const char *CALL_REASON_STR[];
 #endif // DEBUG
 
-char* create_response(px_config *conf, request_context *ctx) {
-    // support for cors headers
-    if (conf->cors_headers_enabled) {
-        const char *origin_header = apr_table_get(ctx->r->headers_in, ORIGIN_HEADER_NAME);
-        const char *origin_value = origin_header ? origin_header : ORIGIN_DEFAULT_VALUE;
-        apr_table_set(ctx->r->headers_out, CORS_HEADER_NAME, origin_value);
+/*
+ * SSL initialization magic copied from mod_auth_cas
+ */
+#if defined(OPENSSL_THREADS) && APR_HAS_THREADS
+
+static apr_thread_mutex_t **ssl_locks;
+static int ssl_num_locks;
+
+static void px_ssl_locking_callback(int mode, int type, const char *file, int line) {
+    if (type < ssl_num_locks) {
+        if (mode & CRYPTO_LOCK) {
+            apr_thread_mutex_lock(ssl_locks[type]);
+        } else {
+            apr_thread_mutex_unlock(ssl_locks[type]);
+        }
+    }
+}
+
+#ifdef OPENSSL_NO_THREADID
+static unsigned long px_ssl_id_callback(void) {
+    return (unsigned long) apr_os_thread_current();
+}
+#else
+static void px_ssl_id_callback(CRYPTO_THREADID *id) {
+    CRYPTO_THREADID_set_numeric(id, (unsigned long) apr_os_thread_current());
+}
+#endif /* OPENSSL_NO_THREADID */
+
+#endif /* defined(OPENSSL_THREADS) && APR_HAS_THREADS */
+
+
+char *create_response(px_config *conf, request_context *ctx) {
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "create_response: response creation started");
+
+    // support for Access-Control-Allow-Origin headers
+    if (conf->origin_wildcard_enabled) {
+        apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN_HEADER_NAME,ORIGIN_WILDCARD_VALUE);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "create_response: header Access-Control-Allow-Origin: * set on response");
+    } else if (conf->origin_envvar_name) {
+        const char *origin_envvar_value = apr_table_get(ctx->r->subprocess_env, conf->origin_envvar_name);
+        if (origin_envvar_value != NULL) {
+            apr_uri_t origin_envvar_uri;
+            apr_status_t origin_envvar_parse_result = apr_uri_parse(ctx->r->pool, origin_envvar_value, &origin_envvar_uri);
+            if (origin_envvar_parse_result != 0) {
+                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "create_response: Origin header was not a valid URI");
+            } else {
+                // Unparse to ensure there is a real URI
+                const char *unparsed_uri = apr_uri_unparse(ctx->r->pool, &origin_envvar_uri, APR_URI_UNP_OMITPATHINFO);
+                if (unparsed_uri != NULL) {
+                    if (strlen(unparsed_uri) > 0) {
+                        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, apr_pstrcat(ctx->r->pool, "create_response: unparsed uri ", unparsed_uri, NULL));
+                        apr_table_set(ctx->r->headers_out, ACCESS_CONTROL_ALLOW_ORIGIN_HEADER_NAME, unparsed_uri);
+                        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, apr_pstrcat(ctx->r->pool, "create_response: header Access-Control-Allow-Origin: ", origin_envvar_value, " set on response", NULL));
+
+                    } else {
+                        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "create_response: invalid URI set in envvar");
+                    }
+                }
+            }
+        } else {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "create_response: envvar NULL skipped setting Access-Control-Allow-Origin header");
+        }
     }
 
     if (ctx->token_origin == TOKEN_ORIGIN_HEADER) {
@@ -132,13 +198,12 @@ char* create_response(px_config *conf, request_context *ctx) {
     return html;
 }
 
-
 void post_verification(request_context *ctx, px_config *conf, bool request_valid) {
-    const char *activity_type = request_valid ? PAGE_REQUESTED_ACTIVITY_TYPE : BLOCKED_ACTIVITY_TYPE;
-    if (strcmp(activity_type, BLOCKED_ACTIVITY_TYPE) == 0 || conf->send_page_activities) {
+    if (!request_valid || conf->send_page_activities) {
+        const char *activity_type = request_valid ? PAGE_REQUESTED_ACTIVITY_TYPE : BLOCKED_ACTIVITY_TYPE;
         char *activity = create_activity(activity_type, conf, ctx);
         if (!activity) {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, ctx->r->server, "[%s]: post_verification: (%s) create activity failed", ctx->app_id, activity_type);
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "post_verification: ", activity_type, " create activity failed", NULL));
             return;
         }
         if (conf->background_activity_send) {
@@ -153,34 +218,37 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
 int px_handle_request(request_rec *r, px_config *conf) {
     // fail open mode
     if (apr_atomic_read32(&conf->px_errors_count) >= conf->px_errors_threshold) {
-        return OK;
+        return DECLINED;
     }
 
     // Decline internal redirects and subrequests
     if (r->prev) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_handle_request: request declined - interal redirect or subrequest", conf->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Request declined - interal redirect or subrequest");
 	    return DECLINED;
     }
 
     if (!px_should_verify_request(r, conf)) {
-        return OK;
+        return DECLINED;
     }
 
     if (conf->skip_mod_by_envvar) {
         const char *skip_px = apr_table_get(r->subprocess_env, "PX_SKIP_MODULE");
         if  (skip_px != NULL) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_handle_request: PX_SKIP_MODULE was set on the request", conf->app_id);
-            return OK;
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Request will not be verified, module is disabled by EnvIf");
+            return DECLINED;
         }
     }
 
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Starting request verification");
+
     request_context *ctx = create_context(r, conf);
     if (ctx) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Request context created successfully");
         bool request_valid = px_verify_request(ctx, conf);
 
         // if request is not valid, and monitor mode is on, toggle request_valid and set pass_reason
         if (conf->monitor_mode && !request_valid) {
-            ap_log_error(APLOG_MARK, LOG_ERR, 0, r->server, "[%s]: request should have been block but monitor mode is on", conf->app_id);
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Request marked for simulated block");
             ctx->pass_reason = PASS_REASON_MONITOR_MODE;
             request_valid = true;
         }
@@ -200,8 +268,6 @@ int px_handle_request(request_rec *r, px_config *conf) {
             const char *score_str = apr_itoa(r->pool, ctx->score);
             apr_table_set(r->headers_in, conf->score_header_name, score_str);
         }
-
-        ap_log_error(APLOG_MARK, LOG_ERR, 0, r->server, "[%s]: request_valid %d , block_enabled %d ", conf->app_id, request_valid, ctx->block_enabled);
 
         if (!request_valid && ctx->block_enabled) {
             // redirecting requests to custom block page if exists
@@ -235,11 +301,10 @@ int px_handle_request(request_rec *r, px_config *conf) {
                 return DONE;
             }
             // failed to create response
-            ap_log_error(APLOG_MARK, LOG_ERR, 0, r->server, "[%s]: Could not create block page with template, passing request", conf->app_id);
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Could not create block page with template, passing request");
         }
     }
     r->status = HTTP_OK;
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_handle_request: request passed, score %d, monitor mode %d", ctx->app_id, ctx->score, conf->monitor_mode);
     return OK;
 }
 
@@ -262,7 +327,7 @@ static void *APR_THREAD_FUNC health_check(apr_thread_t *thd, void *data) {
 
         apr_thread_mutex_unlock(conf->health_check_cond_mutex);
         if (conf->should_exit_thread) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, hc->server, "health_check: marked to exit");
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, hc->server, LOGGER_DEBUG_FORMAT, conf->app_id, "health_check: marked to exit");
             break;
         }
 
@@ -279,7 +344,8 @@ static void *APR_THREAD_FUNC health_check(apr_thread_t *thd, void *data) {
         apr_atomic_set32(&conf->px_errors_count, 0);
     }
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, hc->server, "health_check: thread exiting");
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, hc->server, LOGGER_DEBUG_FORMAT, conf->app_id, "health_check: thread exiting");
+
     curl_easy_cleanup(curl);
     apr_thread_exit(thd, 0);
     return NULL;
@@ -292,7 +358,7 @@ static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, voi
 
     void *v;
     if (!curl) {
-        ap_log_error(APLOG_MARK, LOG_ERR, 0, consumer_data->server, "[%s]: could not create curl handle, thread will not run to consume messages", conf->app_id);
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, consumer_data->server, LOGGER_DEBUG_FORMAT, conf->app_id, "could not create curl handle, thread will not run to consume messages");
         return NULL;
     }
 
@@ -312,9 +378,9 @@ static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, voi
     }
 
     curl_easy_cleanup(curl);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, consumer_data->server, "[%s]: activity consumer thread exited", conf->app_id);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, consumer_data->server, LOGGER_DEBUG_FORMAT, conf->app_id, "activity consumer thread exited");
     apr_thread_exit(thd, 0);
-    ap_log_error(APLOG_MARK, LOG_ERR, 0, consumer_data->server, "[%s]: Sending activity completed", conf->app_id);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, consumer_data->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Sending activity completed");
     return NULL;
 }
 
@@ -331,19 +397,19 @@ static apr_status_t create_health_check(apr_pool_t *p, server_rec *s, px_config 
 
     rv = apr_thread_cond_create(&cfg->health_check_cond, p);
     if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while init health_check thread cond");
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "error while init health_check thread cond");
         return rv;
     }
 
     rv = apr_thread_create(&cfg->health_check_thread, NULL, health_check, (void*) hc_data, p);
     if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while init health_check thread create");
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "error while init health_check thread create");
         return rv;
     }
 
     rv = apr_thread_mutex_create(&cfg->health_check_cond_mutex, 0, p);
     if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while creating health_check thread mutex");
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "error while creating health_check thread mutex");
         return rv;
     }
 
@@ -366,7 +432,7 @@ static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *
 
     rv = apr_queue_create(&cfg->activity_queue, cfg->background_activity_queue_size, pool);
     if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "[%s]: failed to initialize background activity queue", cfg->app_id);
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "failed to initialize background activity queue");
         return rv;
     }
 
@@ -376,19 +442,19 @@ static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *
 
     rv = apr_thread_pool_create(&cfg->activity_thread_pool, 0, cfg->background_activity_workers, pool);
     if (rv != APR_SUCCESS) {
-        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "[%s]: failed to initialize background activity thread pool", cfg->app_id);
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "failed to initialize background activity thread pool");
         return rv;
     }
 
     for (unsigned int i = 0; i < cfg->background_activity_workers; ++i) {
         rv = apr_thread_pool_push(cfg->activity_thread_pool, background_activity_consumer, consumer_data, 0, NULL);
         if (rv != APR_SUCCESS) {
-            ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "failed to push background activity consumer");
+            ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "failed to push background activity consumer");
             return rv;
         }
     }
 
-    ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "finished init background activitys");
+    ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "finished init background activities");
     return rv;
 }
 
@@ -532,16 +598,19 @@ static apr_status_t px_child_exit(void *data) {
 }
 
 static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
-    apr_status_t rv;
-    int vs_num = 0;
+    apr_status_t rv = APR_SUCCESS;
     // init each virtual host
     for (server_rec *vs = s; vs; vs = vs->next) {
-        vs_num = vs_num + 1;
         px_config *cfg = ap_get_module_config(vs->module_config, &perimeterx_module);
+        if (!cfg || !cfg->module_enabled) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "Request will not be verified, module is disabled");
+            continue;
+        }
+        // initialize the PerimeterX needed pools and background workers if the PerimeterX module is enabled
 
         rv = apr_pool_create(&cfg->pool, vs->process->pool);
         if (rv != APR_SUCCESS) {
-            ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "px_hook_child_init: error while trying to init curl_pool");
+            ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "px_child_setup: error while trying to initialize apr_pool for configuration");
             return rv;
         }
 
@@ -551,34 +620,33 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
         telemetry_activity_send(vs, cfg, UPDATE_REASON_INITIAL_CONFIG);
 
         if (cfg->background_activity_send) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for background_activity_send");
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "px_child_setup: start init for background_activity_send");
+
             rv = background_activity_send_init(cfg->pool, vs, cfg);
             if (rv != APR_SUCCESS) {
-                ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "px_hook_child_init: error while trying to init background_activity_consumer");
+                ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "px_child_setup: error while trying to init background_activity_consumer");
                 return rv;
             }
         }
-
+      
         if (cfg->remote_config_enabled) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: setting up remote config thread");
             rv = remote_configuration_init(cfg->pool, vs, cfg);
             if (rv != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "px_hook_child_init: error while trying to init remote_config_init");
-                return rv;
             }
         }
 
         if (cfg->px_health_check) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: setting up health_check thread");
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "px_child_setup: setting up health_check thread");
             rv = create_health_check(cfg->pool, vs, cfg);
             if (rv != APR_SUCCESS) {
-                ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "px_hook_child_init: error while trying to init health_check_thread");
+                ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "px_child_setup: error while trying to init health_check_thread");
                 return rv;
             }
         }
-        apr_pool_cleanup_register(p, s, px_child_exit, apr_pool_cleanup_null);
     }
-
+    apr_pool_cleanup_register(p, s, px_child_exit, apr_pool_cleanup_null);
     return rv;
 }
 
@@ -590,15 +658,74 @@ static void px_hook_child_init(apr_pool_t *p, server_rec *s) {
 }
 
 static apr_status_t px_cleanup_pre_config(void *data) {
-    ERR_free_strings();
+#if (defined (OPENSSL_THREADS) && APR_HAS_THREADS)
+    if (CRYPTO_get_locking_callback() == px_ssl_locking_callback) {
+        CRYPTO_set_locking_callback(NULL);
+    }
+#ifdef OPENSSL_NO_THREADID
+    if (CRYPTO_get_id_callback() == px_ssl_id_callback) {
+        CRYPTO_set_id_callback(NULL);
+    }
+#else
+    if (CRYPTO_THREADID_get_callback() == px_ssl_id_callback) {
+        CRYPTO_THREADID_set_callback(NULL);
+    }
+#endif /* OPENSSL_NO_THREADID */
+#endif /* defined(OPENSSL_THREADS) && APR_HAS_THREADS */
+
+    curl_global_cleanup();
     EVP_cleanup();
+
+    CRYPTO_cleanup_all_ex_data();
+
+#if OPENSSL_VERSION_NUMBER >= 0x1000000fL
+    ERR_remove_thread_state(NULL);
+#else
+    ERR_remove_state(0);
+#endif
+
+#if (OPENSSL_VERSION_NUMBER >= 0x00090805f)
+    ERR_free_strings();
+#endif
     return APR_SUCCESS;
 }
 
 static int px_hook_pre_config(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp) {
-    curl_global_init(CURL_GLOBAL_ALL);
+#if OPENSSL_VERSION_NUMBER < 0x1010000fL
+    (void)CRYPTO_malloc_init();
+#else
+    OPENSSL_malloc_init();
+#endif
     ERR_load_crypto_strings();
+    SSL_load_error_strings();
+    SSL_library_init();
+
     OpenSSL_add_all_algorithms();
+    ERR_clear_error();
+    curl_global_init(CURL_GLOBAL_ALL);
+    /*OpenSSL_add_all_digests();*/
+
+#if (defined(OPENSSL_THREADS) && APR_HAS_THREADS)
+    ssl_num_locks = CRYPTO_num_locks();
+    ssl_locks = apr_pcalloc(p, ssl_num_locks * sizeof(*ssl_locks));
+
+    for (int i = 0; i < ssl_num_locks; i++) {
+        apr_thread_mutex_create(&(ssl_locks[i]), APR_THREAD_MUTEX_DEFAULT, p);
+    }
+#ifdef OPENSSL_NO_THREADID
+    if (CRYPTO_get_locking_callback() == NULL && CRYPTO_get_id_callback() == NULL) {
+        CRYPTO_set_locking_callback(px_ssl_locking_callback);
+        CRYPTO_set_id_callback(px_ssl_id_callback);
+    }
+#else
+    if (CRYPTO_get_locking_callback() == NULL && CRYPTO_THREADID_get_callback() == NULL) {
+        CRYPTO_set_locking_callback(px_ssl_locking_callback);
+        CRYPTO_THREADID_set_callback(px_ssl_id_callback);
+    }
+#endif /* OPENSSL_NO_THREADID */
+#endif /* defined(OPENSSL_THREADS) && APR_HAS_THREADS */
+
+
     apr_pool_cleanup_register(p, NULL, px_cleanup_pre_config, apr_pool_cleanup_null);
     return OK;
 }
@@ -623,6 +750,9 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     px_config *conf = get_config(cmd, config);
     if (!conf) {
         return ERROR_CONFIG_MISSING;
+    }
+    if (conf->base_url_is_set){
+        return ERROR_BASE_URL_BEFORE_APP_ID;
     }
     conf->app_id = app_id;
     conf->base_url = apr_psprintf(cmd->pool, DEFAULT_BASE_URL, app_id, NULL);
@@ -733,6 +863,7 @@ static const char *set_base_url(cmd_parms *cmd, void *config, const char *base_u
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
+    conf->base_url_is_set = true;
     conf->base_url = base_url;
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
@@ -1000,14 +1131,25 @@ static const char *enable_json_response(cmd_parms *cmd, void *config, int arg) {
     return NULL;
 }
 
-static const char *enable_cors_headers(cmd_parms *cmd, void *config, int arg) {
+static const char* set_origin_envvar(cmd_parms *cmd, void *config, const char *origin_envvar_name) {
     px_config *conf = get_config(cmd, config);
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    conf->cors_headers_enabled = arg ? true : false;
+    conf->origin_envvar_name = origin_envvar_name;
     return NULL;
 }
+
+
+static const char *enable_origin_wildcard(cmd_parms *cmd, void *config, int arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->origin_wildcard_enabled = arg ? true : false;
+    return NULL;
+}
+
 
 static const char* set_captcha_type(cmd_parms *cmd, void *config, const char *captcha_type) {
     px_config *conf = get_config(cmd, config);
@@ -1101,7 +1243,7 @@ static void *create_config(apr_pool_t *p) {
         conf->api_timeout_ms = 1000L;
         conf->captcha_timeout = 1000L;
         conf->send_page_activities = true;
-        conf->blocking_score = 100;
+        conf->blocking_score = 101;
         conf->captcha_enabled = true;
         conf->module_version = PERIMETERX_MODULE_VERSION;
         conf->skip_mod_by_envvar = false;
@@ -1121,7 +1263,7 @@ static void *create_config(apr_pool_t *p) {
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
-        conf->background_activity_send = true;
+        conf->background_activity_send = false;
         conf->background_activity_workers = 10;
         conf->background_activity_queue_size = 1000;
         conf->px_errors_threshold = 100;
@@ -1133,9 +1275,10 @@ static void *create_config(apr_pool_t *p) {
         conf->uuid_header_name = UUID_HEADER_NAME;
         conf->vid_header_name = VID_HEADER_NAME;
         conf->json_response_enabled = false;
-        conf->cors_headers_enabled = false;
+        conf->origin_envvar_name  = NULL;
+        conf->origin_wildcard_enabled = false;
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
-        conf->monitor_mode = true;
+        conf->monitor_mode = false;
         conf->enable_token_via_header = true;
         conf->remote_config_enabled = false;
         conf->remote_config_url = DEFAULT_REMOTE_CONFIG_URL;
@@ -1346,11 +1489,16 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Enable module to return a json response"),
-    AP_INIT_FLAG("EnableCORSHeaders",
-            enable_cors_headers,
+    AP_INIT_TAKE1("PXApplyAccessControlAllowOriginByEnvVar",
+            set_origin_envvar,
             NULL,
             OR_ALL,
-            "Enable module to return a json response"),
+            "Enable Access-Control-Allow-Origin: <origin> from defined environmental variable on blocked responses"),
+    AP_INIT_FLAG("EnableAccessControlAllowOriginWildcard",
+            enable_origin_wildcard,
+            NULL,
+            OR_ALL,
+            "Enable Access-Control-Allow-Origin: * header on blocked responses"),
     AP_INIT_TAKE1("CaptchaType",
             set_captcha_type,
             NULL,
@@ -1385,8 +1533,7 @@ static const command_rec px_directives[] = {
 };
 
 static void perimeterx_register_hooks(apr_pool_t *pool) {
-    static const char *const asz_pre[] =
-    { "mod_setenvif.c", NULL };
+    static const char *const asz_pre[] = { "mod_setenvif.c", NULL };
 
     ap_hook_post_read_request(px_hook_post_request, asz_pre, NULL, APR_HOOK_MIDDLE);
     ap_hook_child_init(px_hook_child_init, NULL, NULL, APR_HOOK_MIDDLE);

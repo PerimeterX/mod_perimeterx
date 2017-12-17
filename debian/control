@@ -14,3 +14,14 @@ Description: Apache 2 PerimeterX module
  This is a PerimeterX module for the Apache 2.x web server.  PerimeterX is bot
  detection platform for web applications, for more information please visit
  http://www.perimeterx.com/
+
+Package: libapache2-mod-perimeterx-dbg
+Architecture: any
+Section: debug
+Priority: extra
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Apache 2 PerimeterX module debugging symbols
+ This is a PerimeterX module for the Apache 2.x web server.  PerimeterX is bot
+ detection platform for web applications, for more information please visit
+ http://www.perimeterx.com/
+

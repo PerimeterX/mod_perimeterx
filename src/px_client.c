@@ -16,10 +16,8 @@ CURLcode post_request(const char *url, const char *payload, long timeout, px_con
         return CURLE_FAILED_INIT;
     }
     CURLcode status = post_request_helper(curl, url, payload, timeout, conf, s, response_data);
-    if (request_rtt) {
-        if (CURLE_OK != curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, request_rtt)) {
-            *request_rtt = 0;
-        }
+    if (request_rtt && (CURLE_OK != curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, request_rtt))) {
+        *request_rtt = 0;
     }
     curl_pool_put(conf->curl_pool, curl);
 

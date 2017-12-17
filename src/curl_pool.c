@@ -81,10 +81,8 @@ CURL *curl_pool_get_timedwait(curl_pool *pool, apr_interval_time_t timeout) {
                 }
             }
         }
-        if (!found) {
-            if (apr_thread_cond_timedwait(pool->cond, pool->mutex, timeout) == APR_TIMEUP) {
-                break;
-            }
+        if (!found && (apr_thread_cond_timedwait(pool->cond, pool->mutex, timeout) == APR_TIMEUP)) {
+            break;
         }
     }
     apr_thread_mutex_unlock(pool->mutex);
@@ -92,6 +90,7 @@ CURL *curl_pool_get_timedwait(curl_pool *pool, apr_interval_time_t timeout) {
 }
 
 int curl_pool_put(curl_pool *pool, CURL *curl) {
+    bool extra = true;
     apr_thread_mutex_lock(pool->mutex);
     if (pool->used > 0) {
         // find free spot
@@ -102,14 +101,14 @@ int curl_pool_put(curl_pool *pool, CURL *curl) {
         // put it back to pool
         if (i < pool->size) {
             pool->data[i] = curl;
-            curl = NULL;
+            extra = false;
             pool->used -= 1;
             apr_thread_cond_signal(pool->cond);
         }
     }
     apr_thread_mutex_unlock(pool->mutex);
     // if we have extra, release it
-    if (curl) {
+    if (extra) {
         curl_easy_cleanup(curl);
         return 1;
     }

@@ -31,9 +31,10 @@ Directives
 | UuidHeader | Enables UUID to be placed on the response headers | Off  | On / Off |
 | UuidHeaderName | Sets the key for the UUID header on the response | X-PX-UUID  | String | Works only when `UuidHeader` is set to On |
 | EnableJsonResponse | Turn on response json when accept headers are `application/json` | false  | bool | On / Off |
-| EnableCORSHeaders | Turns on CORS headers for response, if no `Origin` header is preset the value of the `Access-Control-Allow-Origin` will be "*" | false  | bool | On / Off |
+| PXApplyAccessControlAllowOriginByEnvVar | Take the value of a defined environmental variable and apply it as the value of the response header Access-Control-Allow-Origin on a blocked response. If the value of the environmental variable is not a compliant URI (scheme "://" host [ ":" port ]; <scheme>, <host>, <port> from RFC 3986) then it will not be applied| NULL  | String | Only enabled when a value is provided|
+| EnableAccessControlAllowOriginWildcard | Apply **\*** as the value of the response header Access-Control-Allow-Origin. When set this directive will override **PXApplyAccessControlAllowOriginByEnvVar** if it is also defined. | false | Bool | On / Off|
 | CaptchaType | Sets the type of which captcha provider to use | reCaptcha  | String | reCaptcha/funCaptcha |
-| TokenViaHeader | Toggles on/off using mobile sdk| true | bool | On / Off |
+| EnableTokenViaHeader | Toggles on/off using mobile sdk| true | bool | On / Off |
 | BackgroundActivitySend | Toggles on/off asyncrounus activity reporting | true | bool | On / Off |
 | BackgroundActivityWorkers | Number of background workers to send activities | 10 | Number | Integer |
 | BackgroundActivityQueueSize | Queue size for background activity send | 1000 | Number | Integer |
@@ -99,11 +100,25 @@ SetEnvIf Request_Method HEAD PX_SKIP_MODULE true
 SetEnvIf User-Agent good-bot PX_SKIP_MODULE true
 ```
 
+#### <a name="corsheader"></a> PXApplyAccessControlAllowOriginByEnvVar Examples
+
+By using `mod_setenvif` you can configure a set of rules to set an environmental variable on a request that takes the value of the **Origin** header.  If a value is present, its value will be set for the header `Access-Control-Allow-Origin`
+Note that the directive `PXApplyAccessControlAllowOriginByEnvVar` must be configured with the environmental variable name.
+
+Examples below:
+```
+SetEnvIfNoCase Origin ^(.*) PX_APPLY_CORS_VALUE=$1 
+```
+
+```
+SetEnvIf Origin "http(s)?://(www\.)?(google.com|staging.google.com|development.google.com)$" PX_APPLY_CORS_VALUE=$0
+```
+
 Read more on `mod_setenvif` [here](https://httpd.apache.org/docs/current/mod/mod_setenvif.html).
  
-**`mod_env` is not supported with this feature. Though the syntax is similar to mod_setenvif, the module is different. Mod_env will only run after the PerimeterX module in the Apache fixups phase. You should NOT use the `SetEnv` directive to set the `PX_SKIP_MODULE`
+**`mod_env` is not supported with any directives that use the environmental variables set on a request. Though the syntax is similar to mod_setenvif, mod_env will only run after the PerimeterX module in the Apache fixups phase. You should NOT use the `SetEnv` directive to set the `PX_SKIP_MODULE` or `PX_APPLY_CORS_VALUE` environmental variables.
 
-## <a name="#filters"></a>PerimeterX Service monitor
+## <a name="#filters"></a>PerimeterX Service Monitor
 
 When `PXServiceMonitor` is set to `On` - the module will count errors from PerimeterX service and if the number of errors on the specific apache instance will reach `MaxPXErrorsThreshold` in `PXErrorsCountInterval` seconds - fail open strategy will be activated and the requests will pass PerimeterX module without causing any delays.
 
