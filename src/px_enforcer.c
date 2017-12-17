@@ -117,7 +117,7 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
     }
 
     char *response_str = NULL;
-    CURLcode status = post_request(conf->captcha_api_url, payload, conf->captcha_timeout, conf, ctx, &response_str, &ctx->api_rtt);
+    CURLcode status = post_request(conf->captcha_api_url, payload, conf->captcha_timeout, conf, ctx->r->server, &response_str, &ctx->api_rtt);
     free(payload);
     if (status == CURLE_OK) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "verify_captcha: server response ", response_str, NULL));
@@ -143,10 +143,12 @@ bool verify_captcha(request_context *ctx, px_config *conf) {
 
 bool px_should_verify_request(request_rec *r, px_config *conf) {
     if (!conf->module_enabled) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_should_verify_request: module_enabled false", conf->app_id);
         return false;
     }
 
     if (conf->block_page_url && strcmp(r->uri, conf->block_page_url) == 0) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: px_should_verify_request: block_pagE_url or strcmp return false", conf->app_id);
         return false;
     }
 
@@ -206,7 +208,7 @@ risk_response* risk_api_get(request_context *ctx, px_config *conf) {
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "risk payload: ", risk_payload, NULL));
 
     char *risk_response_str;
-    CURLcode status = post_request(conf->risk_api_url, risk_payload, conf->api_timeout_ms, conf, ctx, &risk_response_str, &ctx->api_rtt);
+    CURLcode status = post_request(conf->risk_api_url, risk_payload, conf->api_timeout_ms, conf, ctx->r->server, &risk_response_str, &ctx->api_rtt);
     ctx->made_api_call = true;
     free(risk_payload);
     if (status == CURLE_OK) {

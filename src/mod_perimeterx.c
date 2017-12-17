@@ -26,6 +26,7 @@
 #include <apr_signal.h>
 #include <apr_base64.h>
 #include <apr_time.h>
+#include <apr_thread_rwlock.h>
 #include <apr_uri.h>
 
 #include "px_utils.h"
@@ -42,8 +43,10 @@ APLOG_USE_MODULE(perimeterx);
 #endif
 
 static const char *DEFAULT_BASE_URL = "https://sapi-%s.perimeterx.net";
+static const char *DEFAULT_REMOTE_CONFIG_URL = "https://px-conf-mgmt.perimeterx.net/api/v1/enforcer";
 static const char *RISK_API = "/api/v2/risk";
 static const char *CAPTCHA_API = "/api/v2/risk/captcha";
+static const char *TELEMETRY_API = "/api/v2/risk/telemetry";
 static const char *ACTIVITIES_API = "/api/v1/collector/s2s";
 static const char *HEALTH_CHECK_API = "/api/v1/kpi/status";
 
@@ -73,6 +76,10 @@ static const char *ERROR_BASE_URL_BEFORE_APP_ID = "mod_perimeterx: BaseUrl was s
 
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
+static const char *ENFORCER_TELEMETRY_ACTIVITY_TYPE = "enforcer_telemetry";
+static const char *MONITOR_MODE_BLOCK = "blocking";
+static const char *UPDATE_REASON_REMOTE_CONFIG = "remote_config";
+static const char *UPDATE_REASON_INITIAL_CONFIG = "initial_config";
 
 static const char *LOGGER_DEBUG_FORMAT = "[PerimeterX - DEBUG][%s] - %s";
 static const char *LOGGER_ERROR_FORMAT = "[PerimeterX - ERROR][%s] - %s";
@@ -202,7 +209,7 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
         if (conf->background_activity_send) {
             apr_queue_push(conf->activity_queue, activity);
         } else {
-            post_request(conf->activities_api_url, activity, conf->api_timeout_ms, conf, ctx, NULL, NULL);
+            post_request(conf->activities_api_url, activity, conf->api_timeout_ms, conf, ctx->r->server, NULL, NULL);
             free(activity);
         }
     }
@@ -345,7 +352,7 @@ static void *APR_THREAD_FUNC health_check(apr_thread_t *thd, void *data) {
 }
 
 static void *APR_THREAD_FUNC background_activity_consumer(apr_thread_t *thd, void *data) {
-    activity_consumer_data *consumer_data = (activity_consumer_data*)data;
+    background_thread_data *consumer_data = (background_thread_data*)data;
     px_config *conf = consumer_data->config;
     CURL *curl = curl_easy_init();
 
@@ -409,6 +416,17 @@ static apr_status_t create_health_check(apr_pool_t *p, server_rec *s, px_config 
     return rv;
 }
 
+void telemetry_activity_send(server_rec *s, px_config *cfg, const char *update_reason) {
+    const char *activity_type = ENFORCER_TELEMETRY_ACTIVITY_TYPE;
+    char *activity = config_to_json_string(cfg, update_reason);
+    if (!activity) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "[%s]: telemetry_activity_send: create telemetry activity failed", cfg->app_id);
+        return;
+    }
+    post_request(cfg->telemetry_api_url, activity, cfg->api_timeout_ms, cfg, s, NULL, NULL);
+    free(activity);
+}
+
 static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *s, px_config *cfg) {
     apr_status_t rv;
 
@@ -418,7 +436,7 @@ static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *
         return rv;
     }
 
-    activity_consumer_data *consumer_data = apr_palloc(s->process->pool, sizeof(activity_consumer_data));
+    background_thread_data *consumer_data = apr_palloc(s->process->pool, sizeof(background_thread_data));
     consumer_data->server = s;
     consumer_data->config = cfg;
 
@@ -440,6 +458,117 @@ static apr_status_t background_activity_send_init(apr_pool_t *pool, server_rec *
     return rv;
 }
 
+static void *APR_THREAD_FUNC background_remote_config(apr_thread_t *thd, void *data){
+    background_thread_data *remote_conf_data = (background_thread_data*) data;
+    if (!remote_conf_data){
+        return NULL;
+    }
+    px_config *conf = remote_conf_data->config;
+
+    CURL *curl = curl_easy_init();
+
+    if (!curl) {
+        ap_log_error(APLOG_MARK, LOG_ERR, 0, remote_conf_data->server, "[%s] background_remote_config: could not create curl handle, thread will not run to consume messages", conf->app_id);
+        return NULL;
+    }
+
+    apr_thread_mutex_lock(conf->remote_config_cond_mutex);
+    while (!conf->rc_should_exit_thread) {
+        apr_pool_t *rc_pool = NULL;
+        apr_pool_create(&rc_pool, NULL);
+
+        const char *checksum = NULL;
+        if (conf->remote_conf && conf->remote_conf->checksum){
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: adding checksum %s", conf->app_id, conf->remote_conf->checksum);
+            checksum = conf->remote_conf->checksum;
+        }
+
+        char *url = apr_pstrcat(rc_pool, conf->remote_config_url, "?checksum=", checksum, NULL) ;
+
+        char *remote_config_str;
+        CURLcode status = get_request_helper(curl, url, conf->api_timeout_ms, conf, remote_conf_data->server, &remote_config_str);
+
+        if (status == CURLE_OK) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: found new configurations", conf->app_id);
+            remote_config *remote_conf = parse_remote_config(rc_pool, remote_config_str, conf, remote_conf_data->server);
+            if (remote_conf){
+                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: parsed remote config succesfully", conf->app_id);
+                // Lock mutex for incoming requests
+                apr_thread_rwlock_wrlock(conf->remote_config_rw_mutex);
+                // ---------------------------------------------------
+                // all thread safe operations should be here
+                conf->remote_conf = remote_conf;
+                conf->module_enabled = conf->remote_conf->module_enabled;
+                conf->payload_key = conf->remote_conf->cookie_key;
+                conf->blocking_score = conf->remote_conf->blocking_score;
+                conf->app_id = conf->remote_conf->app_id;
+                conf->monitor_mode = !strcmp(conf->remote_conf->module_mode, MONITOR_MODE_BLOCK) ? false : true;
+                conf->api_timeout_ms = conf->remote_conf->risk_timeout;
+                conf->ip_header_keys = conf->remote_conf->ip_header_keys;
+                conf->sensitive_header_keys = conf->remote_conf->sensitive_header_keys;
+                // ---------------------------------------------------
+                apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+                telemetry_activity_send(remote_conf_data->server, conf, UPDATE_REASON_REMOTE_CONFIG);
+            }
+        } else if (!conf->remote_conf || !conf->remote_conf->checksum) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: remote configurations: failed to get configuration and no initial remote configuration, disabling module until new config will be found", conf->app_id);
+            apr_thread_rwlock_wrlock(conf->remote_config_rw_mutex);
+            // all thread safe operations should be here
+            conf->module_enabled = false;
+            // all thread safe operations should be here
+            apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+
+        }
+        // clear the pool;
+        apr_pool_destroy(rc_pool);
+        apr_thread_cond_timedwait(conf->remote_config_cond, conf->remote_config_cond_mutex, conf->remote_config_interval_ms);
+    }
+    //unlock mutex for incoming request
+    apr_thread_mutex_unlock(conf->remote_config_cond_mutex);
+    // after exit
+    curl_easy_cleanup(curl);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, remote_conf_data->server, "[%s]: remote configurations thread exited", conf->app_id);
+    apr_thread_exit(thd, 0);
+    return NULL;
+}
+
+// init remote configuration thread
+static apr_status_t remote_configuration_init(apr_pool_t *pool, server_rec *s, px_config *cfg) {
+    apr_status_t rv;
+    background_thread_data *remote_conf_data = apr_palloc(s->process->pool, sizeof(background_thread_data));
+    remote_conf_data->server = s;
+    remote_conf_data->config = cfg;
+
+    rv = apr_thread_rwlock_create(&cfg->remote_config_rw_mutex, pool);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while creating remote_config read/write thread mutex");
+        return rv;
+    }
+
+    rv = apr_thread_mutex_create(&cfg->remote_config_cond_mutex, 0, pool);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while creating remote config cond mutex");
+        return rv;
+    }
+
+
+    rv = apr_thread_cond_create(&cfg->remote_config_cond, pool);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while init remote_config thread cond");
+        return rv;
+    }
+
+    rv = apr_thread_create(&cfg->remote_config_thread, NULL, background_remote_config, (void*) remote_conf_data, pool);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "error while init remote_config thread create");
+        return rv;
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "finished init remote config thread");
+    return rv;
+
+}
+
 // free all (apache) unmanaged resources
 static apr_status_t px_child_exit(void *data) {
     server_rec *s = (server_rec*)data;
@@ -450,6 +579,12 @@ static apr_status_t px_child_exit(void *data) {
         cfg->should_exit_thread = true;
         apr_thread_cond_signal(cfg->health_check_cond);
     }
+
+    if (cfg->remote_config_enabled) {
+        cfg->rc_should_exit_thread = true;
+        apr_thread_cond_signal(cfg->remote_config_cond);
+    }
+
     // terminate the queue and wake up all idle threads
     if (cfg->activity_queue) {
         apr_status_t rv = apr_queue_term(cfg->activity_queue);
@@ -466,7 +601,6 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
     apr_status_t rv = APR_SUCCESS;
     // init each virtual host
     for (server_rec *vs = s; vs; vs = vs->next) {
-
         px_config *cfg = ap_get_module_config(vs->module_config, &perimeterx_module);
         if (!cfg || !cfg->module_enabled) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "Request will not be verified, module is disabled");
@@ -482,6 +616,9 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
 
         cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size);
 
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: start init for telemetry_activity_send");
+        telemetry_activity_send(vs, cfg, UPDATE_REASON_INITIAL_CONFIG);
+
         if (cfg->background_activity_send) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "px_child_setup: start init for background_activity_send");
 
@@ -491,10 +628,17 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
                 return rv;
             }
         }
+      
+        if (cfg->remote_config_enabled) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, "px_hook_child_init: setting up remote config thread");
+            rv = remote_configuration_init(cfg->pool, vs, cfg);
+            if (rv != APR_SUCCESS) {
+                ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "px_hook_child_init: error while trying to init remote_config_init");
+            }
+        }
 
         if (cfg->px_health_check) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "px_child_setup: setting up health_check thread");
-
             rv = create_health_check(cfg->pool, vs, cfg);
             if (rv != APR_SUCCESS) {
                 ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, LOGGER_ERROR_FORMAT, cfg->app_id, "px_child_setup: error while trying to init health_check_thread");
@@ -615,6 +759,7 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
+    conf->telemetry_api_url = apr_pstrcat(cmd->pool, conf->base_url, TELEMETRY_API, NULL);
     return NULL;
 }
 
@@ -1021,6 +1166,37 @@ static const char* set_captcha_type(cmd_parms *cmd, void *config, const char *ca
     return NULL;
 }
 
+static const char *set_remote_configuration(cmd_parms *cmd, void *config, int arg) {
+
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->remote_config_enabled = arg ? true : false;
+    return NULL;
+}
+
+static const char* set_remote_config_url(cmd_parms *cmd, void *config, const char *remote_config_url) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    conf->remote_config_url = remote_config_url;
+    return NULL;
+}
+
+static const char *set_remote_config_interval_ms(cmd_parms *cmd, void *config, const char *interval_ms) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->remote_config_interval_ms = atoi(interval_ms) * 1000;
+    return NULL;
+}
+
+
 static const char *set_monitor_mode(cmd_parms *cmd, void *config, int arg) {
     px_config *conf = get_config(cmd, config);
     if (!conf) {
@@ -1030,9 +1206,34 @@ static const char *set_monitor_mode(cmd_parms *cmd, void *config, int arg) {
     return NULL;
 }
 
+static const char *set_sensitive_headers(cmd_parms *cmd, void *config, const char *sensitive_header) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    const char** entry = apr_array_push(conf->sensitive_header_keys);
+    *entry = sensitive_header;
+    return NULL;
+}
+
+static void acquire_read_lock(px_config *conf){
+    if (conf->remote_config_enabled){
+        apr_thread_rwlock_rdlock(conf->remote_config_rw_mutex);
+    }
+}
+
+static void release_read_lock(px_config *conf){
+    if (conf->remote_config_enabled){
+        apr_thread_rwlock_unlock(conf->remote_config_rw_mutex);
+    }
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
-    return px_handle_request(r, conf);
+    acquire_read_lock(conf);
+    int rv = px_handle_request(r, conf);
+    release_read_lock(conf);
+    return rv;
 }
 
 static void *create_config(apr_pool_t *p) {
@@ -1051,12 +1252,14 @@ static void *create_config(apr_pool_t *p) {
         conf->risk_api_url = apr_pstrcat(p, conf->base_url, RISK_API, NULL);
         conf->captcha_api_url = apr_pstrcat(p, conf->base_url, CAPTCHA_API, NULL);
         conf->activities_api_url = apr_pstrcat(p, conf->base_url, ACTIVITIES_API, NULL);
+        conf->telemetry_api_url = apr_pstrcat(p, conf->base_url, TELEMETRY_API, NULL);
         conf->auth_token = "";
         conf->auth_header = "";
         conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->useragents_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->custom_file_ext_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->ip_header_keys = apr_array_make(p, 0, sizeof(char*));
+        conf->sensitive_header_keys = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes = apr_array_make(p, 0, sizeof(char*));
         conf->enabled_hostnames = apr_array_make(p, 0, sizeof(char*));
         conf->sensitive_routes_prefix = apr_array_make(p, 0, sizeof(char*));
@@ -1077,6 +1280,9 @@ static void *create_config(apr_pool_t *p) {
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
         conf->monitor_mode = false;
         conf->enable_token_via_header = true;
+        conf->remote_config_enabled = false;
+        conf->remote_config_url = DEFAULT_REMOTE_CONFIG_URL;
+        conf->remote_config_interval_ms = 5000000L;
     }
     return conf;
 }
@@ -1303,6 +1509,26 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Toggle monitor mode, requests will be inspected but not be blocked"),
+    AP_INIT_FLAG("EnableRemoteConfiguration",
+            set_remote_configuration,
+            NULL,
+            OR_ALL,
+            "Toggle remote configuration on/off"),
+    AP_INIT_TAKE1("RemoteConfigurationUrl",
+            set_remote_config_url,
+            NULL,
+            OR_ALL,
+            "Sets the URL for the remote configurations"),
+      AP_INIT_TAKE1("RemoteConfigurationIntervalMS",
+            set_remote_config_interval_ms,
+            NULL,
+            OR_ALL,
+            "Set timeout for risk API request in milliseconds"),
+      AP_INIT_ITERATE("SensitiveHeader",
+            set_sensitive_headers,
+            NULL,
+            OR_ALL,
+            "Sets a value for a sensitive header which will be filtered and not be reported back"),
     { NULL }
 };
 
