@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/) 
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.8.0-rc.9] 11-20-2017
+* Init and clean OpenSSL with threading support 
+* Switched background activitieis to off by default\
+* Added debug symbols to debian installation
+* Fixed reCaptcha support for mobile sdk
+* Memory leak optimizations
+* Fixed payload v1 action value
+
 ## [2.8.0-rc.8] 10-03-2017
 * Support to modify CORS header by setting the Allow header using an envvar regex set on PXApplyAccessControlAllowOriginByEnvVar configs
 * Enabling wildcard CORS header with EnableAccessControlAllowOriginWildcard configuration

@@ -1,3 +1,14 @@
+libapache-mod-perimeterx (2.8.0-rc.9) jessie; urgency=medium
+
+    * Init and clean OpenSSL with threading support 
+    * Switched background activitieis to off by default
+    * Added debug symbols to debian installation
+    * Fixed reCaptcha support for mobile sdk
+    * Memory leak optimizations
+    * Fixed payload v1 action value
+
+ -- nitzanpx <nitzanpx@github>  Mon, 20 Nov 2017 13:33:00 +0000
+
 libapache-mod-perimeterx (2.8.0-rc.8) jessie; urgency=medium
 
     * virtual host improvements and log level fixes
@@ -11,7 +22,7 @@ libapache-mod-perimeterx (2.8.0-rc.7) jessie; urgency=medium
 
  -- bendpx <bendpx@github>  Tue, 23 Oct 2017 14:24:00 +0000
 
- libapache-mod-perimeterx (2.8.0-rc.6) jessie; urgency=medium
+libapache-mod-perimeterx (2.8.0-rc.6) jessie; urgency=medium
 
    * Fixed crash when module gets empty header
    * Fixed cookie v1 score

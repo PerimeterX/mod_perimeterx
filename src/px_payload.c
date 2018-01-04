@@ -9,10 +9,13 @@
 #include <openssl/hmac.h>
 
 #include <jansson.h>
-
+#include <apr_base64.h>
 #include <apr_tables.h>
 #include <apr_strings.h>
 #include <http_log.h>
+
+static const char *LOGGER_DEBUG_FORMAT = "[PerimeterX - DEBUG][%s] - %s";
+static const char *LOGGER_ERROR_FORMAT = "[PerimeterX - ERROR][%s] - %s";
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -24,49 +27,53 @@ static const int ITERATIONS_LOWER_BOUND = 0;
 #define COOKIE_KEY_LEN  (32)
 #define HASH_LEN (65)
 
-static const char *signing_nofields[] = { NULL };
+static const char *SIGNING_NOFIELDS[] = { NULL };
+static const char *COOKIE_DELIMITER = ":";
 
-int decode_base64(const char *s, unsigned char **o, int *len, apr_pool_t *p) {
+static unsigned char *decode_base64(const char *s, int *len, apr_pool_t *p) {
     if (!s) {
-        return -1;
+        return NULL;
     }
     int l = strlen(s);
-    *o = (unsigned char*)apr_palloc(p, (l * 3 + 1));
+    int buffsize = apr_base64_decode_len(s) + 1;
+    unsigned char *o = (unsigned char*)apr_palloc(p, buffsize);
     BIO *bio = BIO_new_mem_buf((void*)s, -1);
     BIO *b64 = BIO_new(BIO_f_base64());
     bio = BIO_push(b64, bio);
-
     BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-    *len = BIO_read(bio, *o, l);
+    *len = BIO_read(bio, o, l);
     BIO_free_all(b64);
-    return 0;
+    o[*len + 1] = '\0';
+    return o;
 }
 
 static risk_payload *parse_risk_payload3(const char *raw_payload, request_context *ctx) {
     json_error_t error;
     json_t *j_payload = json_loads(raw_payload, 0, &error);
     if (!j_payload) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): parse failed with error. raw_payload (%s), text (%s)", ctx->app_id, raw_payload, error.text);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "payload data (v3): parse failed with error. raw_payload ", raw_payload, " text ", error.text, NULL));
         return NULL;
     }
 
+    const char *vid;
+    const char *uuid;
     int score;
-    char *uuid, *vid, *action;
     json_int_t ts;
+    const char *action;
     if (json_unpack(j_payload, "{s:s,s:s,s:i,s:I,s:s}",
                 "v", &vid,
                 "u", &uuid,
                 "s", &score,
                 "t", &ts,
                 "a", &action)) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): unpack json failed. raw_payload: (%s)", ctx->app_id, raw_payload);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "payload data (v3): unpack json failed. raw_payload: ", raw_payload, NULL));
         json_decref(j_payload);
         return NULL;
     }
 
     risk_payload *payload = (risk_payload*)apr_palloc(ctx->r->pool, sizeof(risk_payload));
     if (!payload) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): failed to allocate risk payload struct. raw_payload: (%s)", ctx->app_id, raw_payload);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "payload data (v3): failed to allocate risk payload struct. raw_payload: ", raw_payload, NULL));
         json_decref(j_payload);
         return NULL;
     }
@@ -80,7 +87,6 @@ static risk_payload *parse_risk_payload3(const char *raw_payload, request_contex
     payload->score = score;
     payload->action = apr_pstrdup(ctx->r->pool, action);
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v3): timestamp %s, vid %s, uuid %s, score %d, action %s", ctx->app_id, payload->timestamp, payload->vid, payload->uuid, payload->score, payload->action);
     json_decref(j_payload);
     return payload;
 }
@@ -89,7 +95,7 @@ static risk_payload *parse_risk_payload1(const char *raw_payload, request_contex
     json_error_t error;
     json_t *j_payload = json_loads(raw_payload, 0, &error);
     if (!j_payload) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): parse v1 failed with error. raw_payload (%s), text (%s)", ctx->app_id, raw_payload, error.text);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "payload data (v1): parse failed with error. raw_payload ", raw_payload, " text ", error.text, NULL));
         return NULL;
     }
 
@@ -104,14 +110,14 @@ static risk_payload *parse_risk_payload1(const char *raw_payload, request_contex
                 "b", &b_val,
                 "t", &ts,
                 "h", &hash)) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): unpack json failed. raw_payload: (%s)", ctx->app_id, raw_payload);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "payload data (v1): unpack json failed. raw_payload: ", raw_payload, NULL));
         json_decref(j_payload);
         return NULL;
     }
 
     risk_payload *payload = (risk_payload*)apr_palloc(ctx->r->pool, sizeof(risk_payload));
     if (!payload) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): failed to allocate risk payload struct. raw_payload: (%s)", ctx->app_id, raw_payload);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "payload data (v1): failed to allocate risk payload struct. raw_payload: ", raw_payload, NULL));
         json_decref(j_payload);
         return NULL;
     }
@@ -130,7 +136,6 @@ static risk_payload *parse_risk_payload1(const char *raw_payload, request_contex
     payload->b = apr_psprintf(ctx->r->pool, "%d", b_val);
     payload->action = "c";
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: payload data (v1): timestamp %s, vid %s, uuid %s hash %s scores: a %s b %s", ctx->app_id, payload->timestamp, payload->vid, payload->uuid, payload->hash, payload->a, payload->b);
     json_decref(j_payload);
     return payload;
 }
@@ -222,52 +227,55 @@ void digest_payload(const risk_payload *payload, request_context *ctx, const cha
 }
 
 risk_payload *decode_payload(const char *px_payload, const char *payload_key, request_context *r_ctx) {
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: payload is %s", r_ctx->app_id, px_payload);
     char *px_payload_cpy = apr_pstrdup(r_ctx->r->pool, px_payload);
     char* saveptr;
-    const char* delimieter = ":";
     // extract hmac from payload for v3
     if (r_ctx->px_payload_version == 3) {
         const char *payload_hmac = apr_strtok(px_payload_cpy, delimieter, &saveptr);
         if (payload_hmac == NULL) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: stoping payload decryption: no valid hmac for v3", r_ctx->app_id);
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid hmac for v3");
             return NULL;
         }
         r_ctx->px_payload_hmac = apr_pstrdup(r_ctx->r->pool, payload_hmac);
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: hmac for v3 is %s", r_ctx->app_id, r_ctx->px_payload_hmac);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, apr_pstrcat(r_ctx->r->pool, "decode_payload: hmac for v3 is ", r_ctx->px_payload_hmac, NULL));
         px_payload_cpy = NULL;
     }
     const char* encoded_salt = apr_strtok(px_payload_cpy, delimieter, &saveptr);
     if (encoded_salt == NULL) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: stoping payload decryption: no valid salt in payload", r_ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid salt in payload", r_ctx->app_id);
         return NULL;
     }
     const char* iterations_str = apr_strtok(NULL, delimieter, &saveptr);
     if (iterations_str == NULL) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: no valid iterations in payload", r_ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: no valid iterations in payload");
         return NULL;
     }
     int iterations = atoi(iterations_str);
     // make sure iteratins is valid and not too big
     if (iterations < ITERATIONS_LOWER_BOUND || iterations > ITERATIONS_UPPER_BOUND) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: number of iterations is illegal - %"APR_INT64_T_FMT, r_ctx->app_id, iterations);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, apr_pstrcat(r_ctx->r->pool, "decode_payload: number of iterations is illegal - ", iterations, NULL));
         return NULL;
     }
     const char* encoded_payload = apr_strtok(NULL, delimieter, &saveptr);
     if (encoded_payload == NULL) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: stoping payload decryption: no valid encoded_payload in payload", r_ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid encoded_payload in payload");
+        return NULL;
+    }
+    // decode payload
+    int payload_len = 0;
+    unsigned char *payload = decode_base64(encoded_payload, &payload_len, r_ctx->r->pool);
+    if (!payload) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: failed to base64 decode payload");
         return NULL;
     }
 
-    // decode payload
-    unsigned char *payload;
-    int payload_len;
-    decode_base64(encoded_payload, &payload, &payload_len, r_ctx->r->pool);
-
     // decode salt
-    unsigned char *salt;
-    int salt_len;
-    decode_base64(encoded_salt, &salt, &salt_len, r_ctx->r->pool);
+    int salt_len = 0;
+    unsigned char *salt = decode_base64(encoded_salt, &salt_len, r_ctx->r->pool);
+    if (!salt) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: failed to base64 decode salt");
+        return NULL;
+    }
 
     // pbkdf2
     unsigned char *pbdk2_out = (unsigned char*)apr_palloc(r_ctx->r->pool, IV_LEN + COOKIE_KEY_LEN);
@@ -278,27 +286,28 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
     const unsigned char key[COOKIE_KEY_LEN];
     memcpy((void*)key, pbdk2_out, sizeof(key));
 
-    const unsigned char iv[IV_LEN];
-    memcpy((void*)iv, pbdk2_out+sizeof(key), sizeof(iv));
+    unsigned char iv[IV_LEN];
+    memcpy(&iv, pbdk2_out+sizeof(key), sizeof(iv));
 
     // decrypt aes-256-cbc
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: decryption failed in: Init", r_ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: decryption failed in: Init");
         EVP_CIPHER_CTX_free(ctx);
         return NULL;
     }
-    unsigned char *dpayload = apr_palloc(r_ctx->r->pool, payload_len);
+    unsigned char *dpayload = apr_pcalloc(r_ctx->r->pool, payload_len + 1);
     int len;
-    int dpayload_len;
     if (EVP_DecryptUpdate(ctx, dpayload, &len, payload, payload_len) != 1) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: decryption failed in: Update", r_ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: decryption failed in: Update");
         EVP_CIPHER_CTX_free(ctx);
         return NULL;
     }
-    dpayload_len = len;
+
+    int dpayload_len = len;
     if (EVP_DecryptFinal_ex(ctx, dpayload + len, &len) != 1) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: decryption failed in: Final", r_ctx->app_id);
+        ERR_print_errors_fp(stderr);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: decryption failed in: Final");
         EVP_CIPHER_CTX_free(ctx);
         return NULL;
     }
@@ -315,16 +324,16 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
 
 validation_result_t validate_payload(const risk_payload *payload, request_context *ctx, const char *payload_key) {
     if (payload == NULL) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: no _px payload", ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, "validate_payload: no _px payload");
         return VALIDATION_RESULT_NULL_PAYLOAD;
     }
 
     if (ctx->px_payload_hmac == NULL || strlen(ctx->px_payload_hmac) == 0) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: no hash", ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, "validate_payload: no hash");
         return VALIDATION_RESULT_NO_SIGNING;
     }
 
-	apr_int64_t now = apr_time_from_msec(apr_time_now());
+   	apr_int64_t now = apr_time_from_msec(apr_time_now());
     if (now > payload->ts) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: payload expired", ctx->app_id);
         return VALIDATION_RESULT_EXPIRED;
@@ -332,14 +341,15 @@ validation_result_t validate_payload(const risk_payload *payload, request_contex
 
     char signature[HASH_LEN];
     const char *signing_fields_ua[] = { ctx->useragent, NULL };
-    const char **signing_fields = (ctx->token_origin == TOKEN_ORIGIN_COOKIE) ? signing_fields_ua : signing_nofields;
+    const char **signing_fields = (ctx->token_origin == TOKEN_ORIGIN_COOKIE) ? signing_fields_ua : SIGNING_NOFIELDS;
     digest_payload(payload, ctx, payload_key, signing_fields, signature, HASH_LEN);
 
     if (memcmp(signature, ctx->px_payload_hmac, 64) != 0) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: invalid signature", ctx->app_id);
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "Cookie HMAC validation failed, value: ", ctx->px_payload_decrypted, " user-agent: ", ctx->useragent, NULL));
         return VALIDATION_RESULT_INVALID;
     }
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: valid", ctx->app_id);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "Cookie evaluation ended successfully, risk score: ", apr_itoa(ctx->r->pool, ctx->score), NULL));
     return VALIDATION_RESULT_VALID;
 }
+

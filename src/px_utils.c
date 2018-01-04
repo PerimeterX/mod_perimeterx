@@ -14,7 +14,7 @@ static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 static const char *MOBILE_SDK_HEADER = "X-PX-AUTHORIZATION";
 
-void update_and_notify_health_check(px_config *conf, server_rec *server) {
+static void update_and_notify_health_check(px_config *conf) {
     if (!conf->px_health_check) {
         return;
     }
@@ -24,6 +24,57 @@ void update_and_notify_health_check(px_config *conf, server_rec *server) {
         apr_thread_cond_signal(conf->health_check_cond);
     }
     apr_thread_mutex_unlock(conf->health_check_cond_mutex);
+}
+
+static size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream) {
+    struct response_t *res = (struct response_t*)stream;
+    size_t realsize = size * nmemb;
+    res->data = realloc(res->data, res->size + realsize + 1);
+    if (res->data == NULL) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, res->server, "[%s]: not enough memory for post_request buffer alloc", res->app_id);
+        return 0;
+    }
+    memcpy(&(res->data[res->size]), contents, realsize);
+    res->size += realsize;
+    res->data[res->size] = 0;
+    return realsize;
+}
+
+static const char* extract_first_ip(apr_pool_t *p, const char *ip) {
+    const char *first_ip = ip;
+    while (*first_ip == ' ') {
+        first_ip++;
+    }
+    const char *sep = first_ip;
+    while (*sep && *sep != ' ' && *sep != ',') {
+        sep++;
+    }
+    if (*sep) {
+        first_ip = apr_pstrndup(p, first_ip, sep - first_ip);
+    }
+    return first_ip;
+}
+
+const char *get_request_ip(const request_rec *r, const px_config *conf) {
+    const char* socket_ip =  r->useragent_ip;
+    const apr_array_header_t *ip_header_keys = conf->ip_header_keys;
+    // looking for the first valid ip address in the configured IPHeader list
+    for (int i = 0; i < ip_header_keys->nelts; i++) {
+        const char *ip_header_key = APR_ARRAY_IDX(ip_header_keys, i, const char*);
+        const char *ip = apr_table_get(r->headers_in, ip_header_key);
+        if (ip) {
+            // extracting the first ip if there header contains a list of ip separated by commas
+            const char *first_ip = extract_first_ip(r->pool, ip);
+            // validation ip
+            in_addr_t addr;
+            struct in6_addr ipv6_addr;
+            if (inet_pton(AF_INET, first_ip, &addr) == 1 || inet_pton(AF_INET6, first_ip, &ipv6_addr) == 1) {
+                return first_ip;
+            }
+        }
+    }
+    // no valid ip found in IPHeader values - using socket_ip as a fallback
+    return socket_ip;
 }
 
 CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, long timeout, px_config *conf, server_rec *server, char **response_data) {
@@ -66,7 +117,7 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server, "[%s]: post_request: status: %lu, url: %s", conf->app_id, status_code, url);
         status = CURLE_HTTP_RETURNED_ERROR;
     } else {
-        update_and_notify_health_check(conf, server);
+        update_and_notify_health_check(conf);
         size_t len = strlen(errbuf);
         if (len) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, server, "[%s]: post_request failed: %s", conf->app_id, errbuf);
@@ -79,58 +130,6 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
         *response_data = NULL;
     }
     return status;
-}
-
-size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream) {
-    struct response_t *res = (struct response_t*)stream;
-    size_t realsize = size * nmemb;
-    res->data = realloc(res->data, res->size + realsize + 1);
-    if (res->data == NULL) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, res->server, "[%s]: not enough memory for post_request buffer alloc", res->app_id);
-        return 0;
-    }
-    memcpy(&(res->data[res->size]), contents, realsize);
-    res->size += realsize;
-    res->data[res->size] = 0;
-    return realsize;
-}
-
-const char* extract_first_ip(apr_pool_t *p, const char *ip) {
-    const char *first_ip = ip;
-    while (*first_ip == ' ') {
-        first_ip++;
-    }
-    const char *sep = first_ip;
-    while (*sep && *sep != ' ' && *sep != ',') {
-        sep++;
-    }
-    if (*sep) {
-        first_ip = apr_pstrndup(p, first_ip, sep - first_ip);
-    }
-    return first_ip;
-}
-
-const char *get_request_ip(const request_rec *r, const px_config *conf) {
-    const char* socket_ip =  r->useragent_ip;
-    const apr_array_header_t *ip_header_keys = conf->ip_header_keys;
-    // looking for the first valid ip address in the configured IPHeader list
-    for (int i = 0; i < ip_header_keys->nelts; i++) {
-        const char *ip_header_key = APR_ARRAY_IDX(ip_header_keys, i, const char*);
-        const char *ip = apr_table_get(r->headers_in, ip_header_key);
-        if (ip) {
-            // extracting the first ip if there header contains a list of ip separated by commas
-            const char *first_ip = extract_first_ip(r->pool, ip);
-			apr_sockaddr_t *s;
-			apr_status_t ipValidationStatus = apr_sockaddr_info_get(&s, first_ip, APR_UNSPEC, 0,  APR_IPV4_ADDR_OK, r->pool);
-			if (ipValidationStatus == APR_SUCCESS) {
-				fprintf(stderr, "success\n");
-			} else {
-				fprintf(stderr, "fail\n");
-			}
-        }
-    }
-    // no valid ip found in IPHeader values - using socket_ip as a fallback
-    return socket_ip;
 }
 
 // returns the payload version, 0 if error msg, -1 if header not found
