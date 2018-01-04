@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <apr_atomic.h>
 #include <apr_strings.h>
+#include <arpa/inet.h>
 #include <http_log.h>
 #include <apr_network_io.h>
 

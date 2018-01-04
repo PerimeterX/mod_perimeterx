@@ -231,7 +231,7 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
     char* saveptr;
     // extract hmac from payload for v3
     if (r_ctx->px_payload_version == 3) {
-        const char *payload_hmac = apr_strtok(px_payload_cpy, delimieter, &saveptr);
+        const char *payload_hmac = apr_strtok(px_payload_cpy, COOKIE_DELIMITER, &saveptr);
         if (payload_hmac == NULL) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid hmac for v3");
             return NULL;
@@ -240,12 +240,12 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, apr_pstrcat(r_ctx->r->pool, "decode_payload: hmac for v3 is ", r_ctx->px_payload_hmac, NULL));
         px_payload_cpy = NULL;
     }
-    const char* encoded_salt = apr_strtok(px_payload_cpy, delimieter, &saveptr);
+    const char* encoded_salt = apr_strtok(px_payload_cpy, COOKIE_DELIMITER, &saveptr);
     if (encoded_salt == NULL) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid salt in payload", r_ctx->app_id);
         return NULL;
     }
-    const char* iterations_str = apr_strtok(NULL, delimieter, &saveptr);
+    const char* iterations_str = apr_strtok(NULL, COOKIE_DELIMITER, &saveptr);
     if (iterations_str == NULL) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: no valid iterations in payload");
         return NULL;
@@ -256,7 +256,7 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, apr_pstrcat(r_ctx->r->pool, "decode_payload: number of iterations is illegal - ", iterations, NULL));
         return NULL;
     }
-    const char* encoded_payload = apr_strtok(NULL, delimieter, &saveptr);
+    const char* encoded_payload = apr_strtok(NULL, COOKIE_DELIMITER, &saveptr);
     if (encoded_payload == NULL) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid encoded_payload in payload");
         return NULL;
