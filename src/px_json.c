@@ -228,7 +228,7 @@ char *create_captcha_payload(const request_context *ctx, const px_config *conf) 
         json_object_set_new(j_captcha, "hostname", json_string(ctx->hostname));
     }
     if (ctx->api_rtt) {
-        json_object_set_new(j_captcha, "risk_rtt", json_integer(ctx->api_rtt));
+        json_object_set_new(j_captcha, "risk_rtt", json_real(ctx->api_rtt));
     }
 
     json_t *j_additional = json_pack("{s:s}",

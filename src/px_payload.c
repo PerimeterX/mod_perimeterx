@@ -1,5 +1,7 @@
 #include "px_payload.h"
 
+#include <stdlib.h>
+#include <openssl/conf.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/bio.h>
@@ -21,9 +23,9 @@ APLOG_USE_MODULE(perimeterx);
 
 static const int ITERATIONS_UPPER_BOUND = 10000;
 static const int ITERATIONS_LOWER_BOUND = 0;
-static const int IV_LEN = 16;
-static const int KEY_LEN = 32;
-static const int HASH_LEN = 65;
+#define IV_LEN (16)
+#define COOKIE_KEY_LEN  (32)
+#define HASH_LEN (65)
 
 static const char *SIGNING_NOFIELDS[] = { NULL };
 static const char *COOKIE_DELIMITER = ":";
@@ -218,9 +220,10 @@ static void digest_payload3(const risk_payload *payload, request_context *ctx, c
 
 void digest_payload(const risk_payload *payload, request_context *ctx, const char *payload_key, const char **signing_fields, char *buffer, int buffer_len) {
     if (ctx->px_payload_version == 3) {
-        return digest_payload3(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
+        digest_payload3(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
+    } else { 
+	digest_payload1(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
     }
-    return digest_payload1(payload, ctx, payload_key, signing_fields, buffer, buffer_len);
 }
 
 risk_payload *decode_payload(const char *px_payload, const char *payload_key, request_context *r_ctx) {
@@ -228,7 +231,7 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
     char* saveptr;
     // extract hmac from payload for v3
     if (r_ctx->px_payload_version == 3) {
-        char *payload_hmac = apr_strtok(px_payload_cpy, COOKIE_DELIMITER, &saveptr);
+        const char *payload_hmac = apr_strtok(px_payload_cpy, COOKIE_DELIMITER, &saveptr);
         if (payload_hmac == NULL) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: stoping payload decryption: no valid hmac for v3");
             return NULL;
@@ -275,13 +278,13 @@ risk_payload *decode_payload(const char *px_payload, const char *payload_key, re
     }
 
     // pbkdf2
-    unsigned char *pbdk2_out = (unsigned char*)apr_palloc(r_ctx->r->pool, IV_LEN + KEY_LEN);
-    if (PKCS5_PBKDF2_HMAC(payload_key, strlen(payload_key), salt, salt_len, iterations, EVP_sha256(),  IV_LEN + KEY_LEN, pbdk2_out) == 0) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, LOGGER_DEBUG_FORMAT, r_ctx->app_id, "decode_payload: PKCS5_PBKDF2_HMAC_SHA256 failed");
+    unsigned char *pbdk2_out = (unsigned char*)apr_palloc(r_ctx->r->pool, IV_LEN + COOKIE_KEY_LEN);
+    if (PKCS5_PBKDF2_HMAC(payload_key, strlen(payload_key), salt, salt_len, iterations, EVP_sha256(),  IV_LEN + COOKIE_KEY_LEN, pbdk2_out) == 0) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r_ctx->r->server, "[%s]: decode_payload: PKCS5_PBKDF2_HMAC_SHA256 failed", r_ctx->app_id);
         return NULL;
     }
-    unsigned char key[KEY_LEN];
-    memcpy(&key, pbdk2_out, sizeof(key));
+    const unsigned char key[COOKIE_KEY_LEN];
+    memcpy((void*)key, pbdk2_out, sizeof(key));
 
     unsigned char iv[IV_LEN];
     memcpy(&iv, pbdk2_out+sizeof(key), sizeof(iv));
@@ -330,12 +333,9 @@ validation_result_t validate_payload(const risk_payload *payload, request_contex
         return VALIDATION_RESULT_NO_SIGNING;
     }
 
-    struct timeval te;
-    gettimeofday(&te, NULL);
-    long long currenttime = te.tv_sec * 1000LL + te.tv_usec / 1000;
-    if (currenttime > payload->ts) {
-        long long age = currenttime - payload->ts;
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, LOGGER_DEBUG_FORMAT, ctx->app_id, apr_pstrcat(ctx->r->pool, "Cookie TTL is expired, value ", ctx->px_payload_decrypted, " age: ", apr_ltoa(ctx->r->pool, age), NULL));
+   	apr_int64_t now = apr_time_from_msec(apr_time_now());
+    if (now > payload->ts) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, ctx->r->server, "[%s]: validate_payload: payload expired", ctx->app_id);
         return VALIDATION_RESULT_EXPIRED;
     }
 

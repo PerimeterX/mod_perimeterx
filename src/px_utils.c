@@ -1,10 +1,11 @@
 #include "px_utils.h"
 
+#include <stdlib.h>
 #include <apr_atomic.h>
-
-#include <arpa/inet.h>
 #include <apr_strings.h>
+#include <arpa/inet.h>
 #include <http_log.h>
+#include <apr_network_io.h>
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -104,7 +105,6 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
     }
     CURLcode status = curl_easy_perform(curl);
     curl_slist_free_all(headers);
-    size_t len;
     if (status == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {
