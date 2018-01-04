@@ -153,7 +153,7 @@ int extract_payload_from_header(apr_pool_t *pool, apr_table_t *headers, const ch
             *payload3 = prefix;
             return 0;
         }
-        int version = atoi(prefix);
+        int version = apr_atoi64(prefix);
         switch (version) {
             case 1:
                 *payload1 = postfix;
