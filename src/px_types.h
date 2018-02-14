@@ -74,7 +74,17 @@ typedef struct px_config_t {
     bool cors_headers_enabled;
     captcha_type_t captcha_type;
     bool monitor_mode;
+<<<<<<< Updated upstream
     bool captcha_subdomain;
+=======
+    bool first_party_enabled;
+    bool first_party_xhr_enabled;
+    const char *reverse_prefix;
+    const char *client_path_prefix;
+    const char *xhr_path_prefix;
+    const char *collector_base_uri;
+    const char *client_base_uri;
+>>>>>>> Stashed changes
 } px_config;
 
 typedef struct health_check_data_t {
@@ -217,5 +227,10 @@ typedef enum {
     PAGE_TEMPLATE_RECAPTCHA_MOBILE =  (PT_FLAG_MOBILE | PT_FLAG_RECAPTCHA),
     PAGE_TEMPLATE_FUNCAPTCHA_MOBILE =  (PT_FLAG_MOBILE | PT_FLAG_FUNCAPTCHA),
 } page_template_t;
+
+typedef struct redirect_response_t {
+    const char *content;
+    const char *respnse_content_type;
+} redirect_response;
 
 #endif

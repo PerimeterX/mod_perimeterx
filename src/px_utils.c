@@ -255,3 +255,78 @@ const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
     }
     return str;      
 }
+
+CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data) {
+    const char *url = apr_pstrcat(r->pool, base_url, uri);
+    const char *data;
+
+    struct response_t response;
+    struct curl_slist *headers = NULL;
+    long status_code;
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+
+    response.data = malloc(1);
+    response.size = 0;
+    response.server = r->server;
+
+    // Prepare headers
+    const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
+
+    if (header_arr) {
+        for (int i = 0; i < arr->nelts; i++) {
+            apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
+            // TODO: Remove sensitive headers
+            headers = curl_slist_append(headers, apr_pstrcat(r->pool, "%s: %s", h.key, h.val));
+        }
+    }
+
+    // Attach first party logics
+    headers = curl_slist_append(headers, apr_pstrcat(r->pool, "%s: %s", FIRST_PARTY_HEADER, FIRST_PARTY_HEADER_VALUE));
+    headers = curl_slist_append(headers, apr_pstrcat(r->pool, "%s: %s", ENFORCER_TRUE_IP, get_request_ip(r, conf)));
+
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    // Case we have body
+    if (strcmp(r->method, "GET") != 0 (rc = util_read(r, &data)) == OK) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+    }
+        
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, conf->api_timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
+    if (conf->proxy_url) {
+        curl_easy_setopt(curl, CURLOPT_PROXY, conf->proxy_url);
+    }
+    CURLcode status = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    if (status == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+        if (status_code == HTTP_OK) {
+            if (response_data != NULL) {
+                *response_data = response.data;
+            } else {
+                free(response.data);
+            }
+            return status;
+        }
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: post_request: status: %lu, url: %s", conf->app_id, status_code, url);
+        status = CURLE_HTTP_RETURNED_ERROR;
+    } else {
+        update_and_notify_health_check(conf);
+        size_t len = strlen(errbuf);
+        if (len) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: post_request failed: %s", conf->app_id, errbuf);
+        } else {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: post_request failed: %s", conf->app_id, curl_easy_strerror(status));
+        }
+    }
+    free(response.data);
+    if (response_data != NULL) {
+        *response_data = NULL;
+    }
+    return status;
+
+
+}

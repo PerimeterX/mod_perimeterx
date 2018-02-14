@@ -231,6 +231,17 @@ int px_handle_request(request_rec *r, px_config *conf) {
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Starting request verification");
 
+   
+    // Redirect client
+    if (strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
+        
+    }
+
+    // Redirect XHR
+    if (strncmp(conf->enable_first_party_xhr, r->parsed_uri.path, strlen(conf->enable_first_party_xhr)) == 0) {
+
+    }
+ 
     request_context *ctx = create_context(r, conf);
     if (ctx) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Request context created successfully");
@@ -605,6 +616,10 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
+    conf->reverse_prefix = apr_pstrdup(cmd->pool, &app_id[2]); 
+    conf->xhr_path_prefix = apr_psprintf(cmd->pool, "/%s/xhr", conf->reverse_prefix);
+    conf->client_path_prefix = apr_psprintf(cmd->pool, "/%s/init.js", conf->reverse_prefix);
+    conf->collector_base_uri = apr_psprintf(cmd->pool, "https://collector-%s.perimeterx.net", app_id);
     return NULL;
 }
 
@@ -1028,6 +1043,24 @@ static const char *enable_captcha_subdomain(cmd_parms *cmd, void *config, int ar
     return NULL;
 }
 
+static const char *enable_first_party(cmd_parms *cmd, void *config, int arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->first_party_enabled = arg ? true : false;
+    return NULL;
+}
+
+static const char *enable_first_party_xhr(cmd_parms *cmd, void *config, int arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    conf->first_party_xhr_enabled = arg ? true : false;
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -1075,7 +1108,11 @@ static void *create_config(apr_pool_t *p) {
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
         conf->monitor_mode = false;
         conf->enable_token_via_header = true;
+<<<<<<< Updated upstream
         conf->captcha_subdomain = false;
+=======
+        conf->client_base_uri = "https://client.perimeterx.net";
+>>>>>>> Stashed changes
     }
     return conf;
 }
@@ -1307,6 +1344,26 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Flags that _pxCaptcha can be signed is a subdomain"),
+    AP_INIT_FLAG("FirstPartyEnabled",
+            enable_first_party,
+            NULL,
+            OR_ALL,
+            "Toggles first party mode"),
+    AP_INIT_FLAG("FirstPartyXhrEnabled",
+            enable_first_party_xhr,
+            NULL,
+            OR_ALL,
+            "Toggles first party xhr"),
+    AP_INIT_TAKE1("ClientBaseUrl",
+            set_client_base_url,
+            NULL,
+            OR_ALL,
+            "Sets base url which client requerst will be redirected to"),
+    AP_INIT_TAKE1("CollectorBaseUrl",
+            set_collector_base_url,
+            NULL,
+            OR_ALL,
+            "Sets base url which client activity requersts will be redirected to"),
     { NULL }
 };
 
