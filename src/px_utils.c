@@ -269,7 +269,7 @@ const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
     return str;      
 }
 
-CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data, apr_array_header_t **response_headers) {
+CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data, apr_array_header_t **response_headers, int *content_size) {
     const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
     //const char *data;
 
@@ -308,7 +308,6 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", ENFORCER_TRUE_IP, get_request_ip(r, conf)));
     headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", "Host", &base_url[8]));
 
-    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -317,7 +316,7 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
  //   if (strcmp(r->method, "GET") != 0 (util_read(r, &data)) == OK) {
  //       curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
  //   }
-        
+    
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, conf->api_timeout_ms);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
@@ -332,8 +331,10 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {
             if (response_data != NULL) {
+                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "body [%s]", response.data);
                 *response_headers = response.headers;
                 *response_data = response.data;
+                *content_size = response.size;
             } else {
                 free(response.data);
             }

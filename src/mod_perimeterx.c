@@ -237,7 +237,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
         r->status = HTTP_OK;
         
         redirect_copy_headers_out(r, redirect_res->response_headers);
-        ap_rwrite(redirect_res->content, strlen(redirect_res->content), r);
+        ap_rwrite(redirect_res->content, redirect_res->content_size, r);
         return DONE;
     }
 

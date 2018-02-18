@@ -227,6 +227,7 @@ typedef enum {
 
 typedef struct redirect_response_t {
     char *content;
+    int content_size; 
     char *response_content_type;
     apr_array_header_t *response_headers;
 } redirect_response;
