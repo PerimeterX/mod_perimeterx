@@ -43,7 +43,7 @@ CURLcode forward_to_perimeterx(request_rec *r, px_config *conf, redirect_respons
         return CURLE_FAILED_INIT;
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: forward_to_perimeterx: redirecting request", conf->app_id);
-    CURLcode status = redirect_helper(curl, base_url, uri, vid, conf, r, &res->content);
+    CURLcode status = redirect_helper(curl, base_url, uri, vid, conf, r, &res->content, &res->response_headers);
     
     // Return curl to pool
     curl_pool_put(conf->curl_pool, curl);

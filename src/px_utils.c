@@ -61,6 +61,17 @@ static size_t write_response_cb(void* contents, size_t size, size_t nmemb, void 
     return realsize;
 }
 
+static size_t header_callback(char *buffer, size_t size, size_t nitems, void *stream) {
+   struct response_t *res = (struct response_t*)stream;
+   size_t realsize = size * nitems;
+
+   if (realsize > 2 && buffer[realsize-2]  == '\r' && buffer[realsize-1] == '\n') {
+       const char** entry = apr_array_push(res->headers);
+       *entry = apr_pstrndup(res->r->pool, buffer, realsize-2);
+   }
+   return realsize;
+}
+
 static const char* extract_first_ip(apr_pool_t *p, const char *ip) {
     const char *first_ip = ip;
     while (*first_ip == ' ') {
@@ -258,7 +269,7 @@ const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
     return str;      
 }
 
-CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data) {
+CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data, apr_array_header_t **response_headers) {
     const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
     //const char *data;
 
@@ -270,6 +281,8 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 
     response.data = malloc(1);
     response.size = 0;
+    response.headers = apr_array_make (r->pool, 0, sizeof(char*));
+    response.r = r;
     response.server = r->server;
 
     // Prepare headers
@@ -280,7 +293,6 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
             apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
             if (strcasecmp(h.key, "Host") != 0) {
                 headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", h.key, h.val));
-                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: attaching header %s: %s", conf->app_id,  h.key, h.val);
             }
         }
     }
@@ -293,12 +305,8 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 
     // Attach first party logics
     headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", FIRST_PARTY_HEADER, FIRST_PARTY_HEADER_VALUE));
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: custom attaching header %s: %s", conf->app_id,  FIRST_PARTY_HEADER, FIRST_PARTY_HEADER_VALUE);
     headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", ENFORCER_TRUE_IP, get_request_ip(r, conf)));
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: custom attaching header %s: %s", conf->app_id,  ENFORCER_TRUE_IP, get_request_ip(r, conf));
     headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", "Host", &base_url[8]));
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: custom attaching header %s: %s", conf->app_id,  "Host", &base_url[8]);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: all headers added", conf->app_id);
 
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -312,7 +320,9 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, conf->api_timeout_ms);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*) &response);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void*) &response);
     if (conf->proxy_url) {
         curl_easy_setopt(curl, CURLOPT_PROXY, conf->proxy_url);
     }
@@ -322,6 +332,7 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {
             if (response_data != NULL) {
+                *response_headers = response.headers;
                 *response_data = response.data;
             } else {
                 free(response.data);

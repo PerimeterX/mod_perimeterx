@@ -58,6 +58,7 @@ static const char *UUID_HEADER_NAME = "X-PX-UUID";
 static const char *ACCEPT_HEADER_NAME = "Accept";
 static const char *ACCESS_CONTROL_ALLOW_ORIGIN_HEADER_NAME = "Access-Control-Allow-Origin";
 static const char *ORIGIN_WILDCARD_VALUE = "*";
+static const char *HEADER_DELIMETER = ":";
 
 static const int MAX_CURL_POOL_SIZE = 10000;
 static const int ERR_BUF_SIZE = 128;
@@ -205,6 +206,18 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
     }
 }
 
+static void redirect_copy_headers_out(request_rec *r, apr_array_header_t *response_headers) {
+    if (response_headers) {
+        apr_table_clear(r->headers_out);
+        for (int i = 1; i < response_headers->nelts; i++) {
+            char *header = APR_ARRAY_IDX(response_headers, i, char*);
+            char *value = NULL;
+            char *key = apr_strtok (header, HEADER_DELIMETER, &value);
+            apr_table_set(r->headers_out, key, value);
+        }
+    }
+}
+
 int px_handle_request(request_rec *r, px_config *conf) {
     // fail open mode
     if (apr_atomic_read32(&conf->px_errors_count) >= conf->px_errors_threshold) {
@@ -214,7 +227,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
     // Decline internal redirects and subrequests
     if (r->prev) {
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Request declined - interal redirect or subrequest");
-	    return DECLINED;
+        return DECLINED;
     }
 
     const redirect_response *redirect_res = NULL;
@@ -222,6 +235,8 @@ int px_handle_request(request_rec *r, px_config *conf) {
     if (strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
         redirect_res = redirect_client(r, conf);
         r->status = HTTP_OK;
+        
+        redirect_copy_headers_out(r, redirect_res->response_headers);
         ap_rwrite(redirect_res->content, strlen(redirect_res->content), r);
         return DONE;
     }
