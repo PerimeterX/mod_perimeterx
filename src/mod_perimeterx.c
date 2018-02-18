@@ -217,6 +217,23 @@ int px_handle_request(request_rec *r, px_config *conf) {
 	    return DECLINED;
     }
 
+    const redirect_response *redirect_res = NULL;
+    // Redirect client
+    if (strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
+        redirect_res = redirect_client(r, conf);
+        r->status = HTTP_OK;
+        ap_rwrite(redirect_res->content, strlen(redirect_res->content), r);
+        return DONE;
+    }
+
+    // Redirect XHR
+    if (strncmp(conf->xhr_path_prefix, r->parsed_uri.path, strlen(conf->xhr_path_prefix)) == 0) {
+        redirect_res = redirect_xhr(r, conf);
+        r->status = HTTP_OK;
+        ap_rwrite(redirect_res->content, strlen(redirect_res->content), r);
+        return DONE;
+    }
+
     if (!px_should_verify_request(r, conf)) {
         return DECLINED;
     }
@@ -230,17 +247,6 @@ int px_handle_request(request_rec *r, px_config *conf) {
     }
 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, LOGGER_DEBUG_FORMAT, conf->app_id, "Starting request verification");
-
-   
-    // Redirect client
-    if (strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
-        
-    }
-
-    // Redirect XHR
-    if (strncmp(conf->enable_first_party_xhr, r->parsed_uri.path, strlen(conf->enable_first_party_xhr)) == 0) {
-
-    }
  
     request_context *ctx = create_context(r, conf);
     if (ctx) {
@@ -1061,6 +1067,26 @@ static const char *enable_first_party_xhr(cmd_parms *cmd, void *config, int arg)
     return NULL;
 }
 
+static const char* set_collector_base_url(cmd_parms *cmd, void *config, const char *arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    conf->collector_base_uri = arg;
+    return NULL;
+}
+
+static const char* set_client_base_url(cmd_parms *cmd, void *config, const char *arg) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    conf->client_base_uri = arg;
+    return NULL;
+}
+
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
     return px_handle_request(r, conf);
@@ -1108,11 +1134,8 @@ static void *create_config(apr_pool_t *p) {
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
         conf->monitor_mode = false;
         conf->enable_token_via_header = true;
-<<<<<<< Updated upstream
         conf->captcha_subdomain = false;
-=======
         conf->client_base_uri = "https://client.perimeterx.net";
->>>>>>> Stashed changes
     }
     return conf;
 }

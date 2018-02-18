@@ -16,7 +16,9 @@ APLOG_USE_MODULE(perimeterx);
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 static const char *MOBILE_SDK_HEADER = "X-PX-AUTHORIZATION";
-
+static const char *ENFORCER_TRUE_IP = "x-px-enforcer-true-ip";
+static const char *FIRST_PARTY_HEADER = "x-px-first-party";
+static const char *FIRST_PARTY_HEADER_VALUE = "1";
 static const unsigned char test_char_table[256] = {
     32,30,30,30,30,30,30,30,30,30,31,30,30,30,30,30,30,30,30,30,
     30,30,30,30,30,30,30,30,30,30,30,30,6,16,63,22,17,22,49,17,
@@ -247,7 +249,7 @@ int escape_urlencoded(char *escaped, const char *str, apr_size_t *len) {
 }
 
 const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
-    apr_size_t len;
+    apr_size_t len;       
     if (escape_urlencoded(NULL, str, &len) == 0) {
             char *encoded = apr_palloc(p, len);
             escape_urlencoded(encoded, str, NULL);
@@ -257,8 +259,8 @@ const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
 }
 
 CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data) {
-    const char *url = apr_pstrcat(r->pool, base_url, uri);
-    const char *data;
+    const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
+    //const char *data;
 
     struct response_t response;
     struct curl_slist *headers = NULL;
@@ -271,27 +273,42 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     response.server = r->server;
 
     // Prepare headers
-    const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
+    const apr_array_header_t *header_arr = apr_table_elts(r->headers_in);
 
     if (header_arr) {
-        for (int i = 0; i < arr->nelts; i++) {
+        for (int i = 0; i < header_arr->nelts; i++) {
             apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
-            // TODO: Remove sensitive headers
-            headers = curl_slist_append(headers, apr_pstrcat(r->pool, "%s: %s", h.key, h.val));
+            if (strcasecmp(h.key, "Host") != 0) {
+                headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", h.key, h.val));
+                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: attaching header %s: %s", conf->app_id,  h.key, h.val);
+            }
         }
     }
 
-    // Attach first party logics
-    headers = curl_slist_append(headers, apr_pstrcat(r->pool, "%s: %s", FIRST_PARTY_HEADER, FIRST_PARTY_HEADER_VALUE));
-    headers = curl_slist_append(headers, apr_pstrcat(r->pool, "%s: %s", ENFORCER_TRUE_IP, get_request_ip(r, conf)));
+    // append vid cookie
+    if (vid) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: attaching vid header '%s: vid=%s'", conf->app_id, "Cookie", vid);
+        headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: vid=%s;", "Cookie", vid));
+    }
 
+    // Attach first party logics
+    headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", FIRST_PARTY_HEADER, FIRST_PARTY_HEADER_VALUE));
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: custom attaching header %s: %s", conf->app_id,  FIRST_PARTY_HEADER, FIRST_PARTY_HEADER_VALUE);
+    headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", ENFORCER_TRUE_IP, get_request_ip(r, conf)));
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: custom attaching header %s: %s", conf->app_id,  ENFORCER_TRUE_IP, get_request_ip(r, conf));
+    headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", "Host", &base_url[8]));
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: custom attaching header %s: %s", conf->app_id,  "Host", &base_url[8]);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: all headers added", conf->app_id);
+
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip");
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_URL, url);
+    
     // Case we have body
-    if (strcmp(r->method, "GET") != 0 (rc = util_read(r, &data)) == OK) {
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
-    }
+ //   if (strcmp(r->method, "GET") != 0 (util_read(r, &data)) == OK) {
+ //       curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+ //   }
         
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, conf->api_timeout_ms);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
@@ -327,6 +344,4 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         *response_data = NULL;
     }
     return status;
-
-
 }

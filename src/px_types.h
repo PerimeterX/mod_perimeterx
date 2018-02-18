@@ -74,9 +74,7 @@ typedef struct px_config_t {
     bool cors_headers_enabled;
     captcha_type_t captcha_type;
     bool monitor_mode;
-<<<<<<< Updated upstream
     bool captcha_subdomain;
-=======
     bool first_party_enabled;
     bool first_party_xhr_enabled;
     const char *reverse_prefix;
@@ -84,7 +82,6 @@ typedef struct px_config_t {
     const char *xhr_path_prefix;
     const char *collector_base_uri;
     const char *client_base_uri;
->>>>>>> Stashed changes
 } px_config;
 
 typedef struct health_check_data_t {
@@ -229,8 +226,18 @@ typedef enum {
 } page_template_t;
 
 typedef struct redirect_response_t {
-    const char *content;
-    const char *respnse_content_type;
+    char *content;
+    char *response_content_type;
+    apr_array_header_t *response_headers;
 } redirect_response;
+
+struct response_t {
+    char* data;
+    size_t size;
+    server_rec *server;
+    request_rec *r;
+    apr_array_header_t *headers;
+    const char *app_id;
+};
 
 #endif
