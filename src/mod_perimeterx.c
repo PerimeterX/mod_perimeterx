@@ -503,7 +503,7 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
         }
 
         cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size);
-
+        cfg->redirect_curl_pool = curl_pool_create(cfg->pool, cfg->redirect_curl_pool_size);
         if (cfg->background_activity_send) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "px_child_setup: start init for background_activity_send");
 
@@ -738,6 +738,20 @@ static const char *set_curl_pool_size(cmd_parms *cmd, void *config, const char *
     conf->curl_pool_size = pool_size;
     return NULL;
 }
+
+static const char *set_redirect_curl_pool_size(cmd_parms *cmd, void *config, const char *curl_pool_size) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+    int pool_size = atoi(curl_pool_size);
+    if (pool_size > MAX_CURL_POOL_SIZE) {
+        return MAX_CURL_POOL_SIZE_EXCEEDED;
+    }
+    conf->redirect_curl_pool_size = pool_size;
+    return NULL;
+}
+
 
 static const char *set_base_url(cmd_parms *cmd, void *config, const char *base_url) {
     px_config *conf = get_config(cmd, config);
@@ -1119,6 +1133,7 @@ static void *create_config(apr_pool_t *p) {
         conf->module_version = PERIMETERX_MODULE_VERSION;
         conf->skip_mod_by_envvar = false;
         conf->curl_pool_size = 100;
+        conf->redirect_curl_pool_size = 40;
         conf->base_url = DEFAULT_BASE_URL;
         conf->risk_api_url = apr_pstrcat(p, conf->base_url, RISK_API, NULL);
         conf->captcha_api_url = apr_pstrcat(p, conf->base_url, CAPTCHA_API, NULL);
@@ -1228,6 +1243,11 @@ static const command_rec px_directives[] = {
             "This headers will be used to get the request real IP, first header to get valid IP will be usesd"),
     AP_INIT_TAKE1("CurlPoolSize",
             set_curl_pool_size,
+            NULL,
+            OR_ALL,
+            "Determines number of curl active handles"),
+        AP_INIT_TAKE1("RedirectCurlPoolSize",
+            set_redirect_curl_pool_size,
             NULL,
             OR_ALL,
             "Determines number of curl active handles"),

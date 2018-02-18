@@ -37,7 +37,7 @@ CURLcode post_request(const char *url, const char *payload, long timeout, px_con
 }
 
 CURLcode forward_to_perimeterx(request_rec *r, px_config *conf, redirect_response *res, const char *base_url, const char *uri, const char *vid) {
-    CURL *curl = curl_pool_get_wait(conf->curl_pool);
+    CURL *curl = curl_pool_get_wait(conf->redirect_curl_pool);
     if (curl == NULL) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, r->server, "[%s]: forward_to_perimeterx: could not obtain curl handle", conf->app_id);
         return CURLE_FAILED_INIT;
@@ -45,7 +45,7 @@ CURLcode forward_to_perimeterx(request_rec *r, px_config *conf, redirect_respons
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: forward_to_perimeterx: redirecting request", conf->app_id);
     CURLcode status = redirect_helper(curl, base_url, uri, vid, conf, r, &res->content, &res->response_headers, &res->content_size);
      // Return curl to pool
-    curl_pool_put(conf->curl_pool, curl);
+    curl_pool_put(conf->redirect_curl_pool, curl);
     return status;
 }
 
