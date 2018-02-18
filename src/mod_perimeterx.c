@@ -235,7 +235,6 @@ int px_handle_request(request_rec *r, px_config *conf) {
     if (strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
         redirect_res = redirect_client(r, conf);
         r->status = HTTP_OK;
-        
         redirect_copy_headers_out(r, redirect_res->response_headers);
         ap_rwrite(redirect_res->content, redirect_res->content_size, r);
         return DONE;
@@ -245,6 +244,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
     if (strncmp(conf->xhr_path_prefix, r->parsed_uri.path, strlen(conf->xhr_path_prefix)) == 0) {
         redirect_res = redirect_xhr(r, conf);
         r->status = HTTP_OK;
+        redirect_copy_headers_out(r, redirect_res->response_headers);
         ap_rwrite(redirect_res->content, strlen(redirect_res->content), r);
         return DONE;
     }

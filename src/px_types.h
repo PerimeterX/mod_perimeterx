@@ -232,13 +232,4 @@ typedef struct redirect_response_t {
     apr_array_header_t *response_headers;
 } redirect_response;
 
-struct response_t {
-    char* data;
-    size_t size;
-    server_rec *server;
-    request_rec *r;
-    apr_array_header_t *headers;
-    const char *app_id;
-};
-
 #endif

@@ -5,13 +5,25 @@
 #include <arpa/inet.h>
 #include <apr_strings.h>
 #include <http_log.h>
+#include "ap_config.h"
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
 #endif
 
+#define BLOCKSIZE 4096
 #define T_ESCAPE_URLENCODED    (16)
 #define TEST_CHAR(c, f)        (test_char_table[(unsigned)(c)] & (f))
+
+struct response_t {
+    char* data;
+    size_t size;
+    server_rec *server;
+    request_rec *r;
+    apr_array_header_t *headers;
+    const char *app_id;
+};
+
 
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
@@ -45,6 +57,35 @@ static void update_and_notify_health_check(px_config *conf) {
         apr_thread_cond_signal(conf->health_check_cond);
     }
     apr_thread_mutex_unlock(conf->health_check_cond_mutex);
+}
+
+static int read_body(request_rec *r, char **body) {
+    *body = NULL;
+    int ret = ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
+    if(OK == ret && ap_should_client_block(r)) {
+        char* buffer = (char*)apr_pcalloc(r->pool, BLOCKSIZE);
+        int len;
+        char *data = malloc(1);
+        int d_size = 0;
+        data[0] = '\0';
+        while((len=ap_get_client_block(r, buffer, BLOCKSIZE)) > 0) {
+            data = realloc(data, d_size + len + 1);
+            if (data == NULL) {
+                return -1;
+            }
+            memcpy(&(data[d_size]), buffer, len);
+            d_size += len;
+            data[d_size] = '\0';
+        }
+        if (len == -1) {
+            free(data);
+            return -1;
+        }
+        *body = data;
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "requrest_rec body[%s]", data);
+        return 0;
+    }
+    return -1;
 }
 
 static size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream) {
@@ -281,7 +322,7 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 
     response.data = malloc(1);
     response.size = 0;
-    response.headers = apr_array_make (r->pool, 0, sizeof(char*));
+    response.headers = apr_array_make(r->pool, 0, sizeof(char*));
     response.r = r;
     response.server = r->server;
 
@@ -313,9 +354,11 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     curl_easy_setopt(curl, CURLOPT_URL, url);
     
     // Case we have body
- //   if (strcmp(r->method, "GET") != 0 (util_read(r, &data)) == OK) {
- //       curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
- //   }
+    char *body;
+    int body_res = read_body(r, &body);
+    if (body_res == 0 && strcmp(r->method, "POST") == 0) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    }
     
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, conf->api_timeout_ms);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_response_cb);
@@ -327,6 +370,11 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     }
     CURLcode status = curl_easy_perform(curl);
     curl_slist_free_all(headers);
+    
+    if (body) {
+        free(body);
+    }
+
     if (status == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {

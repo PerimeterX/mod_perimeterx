@@ -89,7 +89,7 @@ const redirect_response *redirect_xhr(request_rec *r, px_config *conf) {
         return res;
     }
 
-    int cut_prefix_size = sizeof(conf->xhr_path_prefix) -1;
+    int cut_prefix_size = strlen(conf->xhr_path_prefix);
     const char *xhr_url = apr_pstrdup(r->pool, &r->uri[cut_prefix_size]);
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] redirect_reponse: forwarding request from %s to %s", conf->app_id, r->parsed_uri.path, xhr_url);
 
