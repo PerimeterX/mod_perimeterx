@@ -55,8 +55,9 @@ const redirect_response *redirect_client(request_rec *r, px_config *conf) {
     // Default content in case of failuer
     if (!conf->first_party_enabled) {
 handle_default_client_response:
-        res->content =  apr_pstrdup(r->pool, ""); 
-        res->content_size = 1;
+        res->content =  ""; 
+        res->response_headers = NULL;
+        res->content_size = 0;
         return res;    
     }
 
@@ -72,7 +73,6 @@ handle_default_client_response:
 
 const redirect_response *redirect_xhr(request_rec *r, px_config *conf) {
     redirect_response *res = apr_palloc(r->pool, sizeof(redirect_response));
-
  
     // Handle xhr/client featrue turned off
     if (!conf->first_party_enabled || !conf->first_party_enabled ) {

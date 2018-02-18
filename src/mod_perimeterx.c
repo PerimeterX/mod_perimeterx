@@ -207,7 +207,7 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
 }
 
 static void redirect_copy_headers_out(request_rec *r, apr_array_header_t *response_headers) {
-    if (response_headers) {
+    if (response_headers && response_headers->nelts > 1) {
         apr_table_clear(r->headers_out);
         for (int i = 1; i < response_headers->nelts; i++) {
             char *header = APR_ARRAY_IDX(response_headers, i, char*);

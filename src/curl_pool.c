@@ -103,6 +103,7 @@ int curl_pool_put(curl_pool *pool, CURL *curl) {
             pool->data[i] = curl;
             extra = false;
             pool->used -= 1;
+            curl_easy_reset(curl);
             apr_thread_cond_signal(pool->cond);
         }
     }
