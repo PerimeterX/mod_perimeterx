@@ -400,8 +400,5 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         }
     }
     free(response.data);
-    if (response_data != NULL) {
-        *response_data = NULL;
-    }
     return status;
 }

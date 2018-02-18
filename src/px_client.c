@@ -18,7 +18,7 @@ static const char *GIF_CONTENT_TYPE = "image/gif";
 static const char *VID_OPT1 = "_pxvid";
 static const char *VID_OPT2 = "vid";
 static const char *CLIENT_URI = "/%s/main.min.js";
-static char *EMPTY_GIF = "R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=";
+static const char *EMPTY_GIF = "R0lGODlhAQABAIAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
 CURLcode post_request(const char *url, const char *payload, long timeout, px_config *conf, const request_context *ctx, char **response_data, double *request_rtt) {
     CURL *curl = curl_pool_get_wait(conf->curl_pool);
@@ -44,8 +44,7 @@ CURLcode forward_to_perimeterx(request_rec *r, px_config *conf, redirect_respons
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: forward_to_perimeterx: redirecting request", conf->app_id);
     CURLcode status = redirect_helper(curl, base_url, uri, vid, conf, r, &res->content, &res->response_headers, &res->content_size);
-    
-    // Return curl to pool
+     // Return curl to pool
     curl_pool_put(conf->curl_pool, curl);
     return status;
 }
@@ -54,44 +53,58 @@ const redirect_response *redirect_client(request_rec *r, px_config *conf) {
     redirect_response *res = apr_palloc(r->pool, sizeof(redirect_response));
     res->response_content_type = apr_pstrdup(r->pool, CLIENT_CONTENT_TYPE); 
     // Default content in case of failuer
-    res->content =  apr_pstrdup(r->pool, ""); 
     if (!conf->first_party_enabled) {
+handle_default_client_response:
+        res->content =  apr_pstrdup(r->pool, ""); 
+        res->content_size = 1;
         return res;    
     }
 
     const char *client_uri = apr_psprintf(r->pool, CLIENT_URI, conf->app_id);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]:  redirect_reponse: forwarding request from %s to %s", conf->app_id,r->parsed_uri.path, client_uri);
-    forward_to_perimeterx(r, conf, res, conf->client_base_uri, client_uri, NULL);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]:  redirect_client: forwarding request from %s to %s", conf->app_id,r->parsed_uri.path, client_uri);
+    CURLcode status = forward_to_perimeterx(r, conf, res, conf->client_base_uri, client_uri, NULL);
+    if (status != CURLE_OK) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_client: response returned none 200 response, CURLcode[%d]", conf->app_id, status);
+        goto handle_default_client_response; 
+    }
     return res;    
 };
 
 const redirect_response *redirect_xhr(request_rec *r, px_config *conf) {
     redirect_response *res = apr_palloc(r->pool, sizeof(redirect_response));
-    
+
+ 
     // Handle xhr/client featrue turned off
     if (!conf->first_party_enabled || !conf->first_party_enabled ) {
+handle_default_xhr_response: 
         // Default values for xhr
-        res->content = apr_pstrdup(r->pool, "{}"); 
-        res->response_content_type = apr_pstrdup(r->pool, GIF_CONTENT_TYPE); 
+        res->content = "{}"; 
+        res->response_content_type = apr_pstrdup(r->pool,XHR_CONTENT_TYPE ); 
+        res->content_size = 2;
 
         // Check if its a gif
         const char *file_ending = strrchr(r->uri, '.');
         if (file_ending && strcmp(file_ending, ".gif") == 0) {
-            res->response_content_type = apr_pstrdup(r->pool, XHR_CONTENT_TYPE); 
+            res->response_content_type = apr_pstrdup(r->pool, GIF_CONTENT_TYPE); 
             int gif_len = apr_base64_decode_len(EMPTY_GIF);
+            char *decbuf = apr_palloc(r->pool, gif_len);
             // Verify that decoded b64 ok
-            if (apr_base64_decode(EMPTY_GIF, res->content) != gif_len) {
-               ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] Failed to decode b64 empty gif", conf->app_id);
-               res->content = ""; 
+            if (apr_base64_decode(decbuf, EMPTY_GIF) > 0) {
+                res->content = decbuf;
+                res->content_size = gif_len;
+            } else {
+                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] Failed to decode b64 empty gif", conf->app_id);
+                res->content = "";
+                res->content_size = 1;
             }
-            res->response_content_type =  apr_pstrdup(r->pool, CLIENT_CONTENT_TYPE); 
+
         }
         return res;
     }
 
     int cut_prefix_size = strlen(conf->xhr_path_prefix);
     const char *xhr_url = apr_pstrdup(r->pool, &r->uri[cut_prefix_size]);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] redirect_reponse: forwarding request from %s to %s", conf->app_id, r->parsed_uri.path, xhr_url);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] redirect_xhr: forwarding request from %s to %s", conf->app_id, r->parsed_uri.path, xhr_url);
 
     // Copy VID
     const char *vid = NULL;
@@ -101,6 +114,10 @@ const redirect_response *redirect_xhr(request_rec *r, px_config *conf) {
     }
 
     // Attach VID to request as cookie
-    forward_to_perimeterx(r, conf, res, conf->collector_base_uri, xhr_url, vid);
+    CURLcode status = forward_to_perimeterx(r, conf, res, conf->collector_base_uri, xhr_url, vid);
+    if (status != CURLE_OK) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_xhr: response returned none 200 response, CURLcode[%d]", conf->app_id, status);
+        goto handle_default_xhr_response;
+    }
     return res;
 };
