@@ -5,7 +5,7 @@ Directives
 - [Filters](#filters)
 - [Customizing block page](#blockpage)
 - [PerimeterX Service monitor](#servicemonitor)
-
+- [First Party Mode](#first-party)
 
 ## <a name="#basic"></a>Basic 
 
@@ -39,7 +39,11 @@ Directives
 | BackgroundActivityWorkers | Number of background workers to send activities | 10 | Number | Integer |
 | BackgroundActivityQueueSize | Queue size for background activity send | 1000 | Number | Integer |
 | MonitorMode | Toggles the module monitor | False | bool | On / Off |
-| CaptchaSubdomain | Toggles captcha on subdomain making the module remove pxCaptcha cookie from all domains under main domain (using `.<domain>.<ext>` instead of `www.<domain>.<ext>`)| False | bool | On / Off |
+| CaptchaSubdomain | Toggles captcha on subdomain making the module remove pxCaptcha cookie from all domains under main domain (using `.<domain>.<ext>` instead of `www.<domain>.<ext>`)| Off | bool | On / Off |
+| FirstPartyEnabled | Toggles first party mode | On | bool | On / Off |
+| FirstPartyXhrEnabled | Toggles sending xhr requests through first party | On | bool | On / Off |
+| ClientBaseUrl | Set the base url to fetch the client from | https://client.perimeterx.net when first party is enbaled | String | A-Za-z |
+| CollectorBaseUrl | Set the base url to the collector for sending xhr requests when first party is enabled | https://<APP_ID>-collector.perimeterx.com | String | A-Za-z |
 #### <a name="ipheader">IPHeader Additional Information</a>: 
 
 * The order of headers in the configuration matters. The first header found with a value will be taken as the IP address.
@@ -128,5 +132,26 @@ In the background there will be periodic health check with PerimeterX service an
 | PXErrorsCountInterval | Time interval - In milliseconds -  in which we will count any kind of non successful call for PerimeterX service - when time is reached, without reaching the MaxPXErrorsThreshold, the counter will be set back to zero |    60000 |  Integer |      |
 
 
+#### <a name="first-party"></a> First Party Mode
+Enables the module to receive/send data from/to the sensor, acting as a "reverse-proxy" for client requests and sensor activities.
 
+Customers are advised to use the first party sensor (where the web sensor is served locally, from your domain) for two main reasons:
+1. Improved performance - serving the sensor as part of the standard site content removes the need to open a new connection to PerimeterX servers when a page is loaded.
+2. Improved detection - third party content may sometimes be blocked by certain browser plugins and privacy addons. First party sensor directly leads to improved detection, as observed on customers who previously moved away from third party sensor.
 
+The following routes will be used in order to serve the sensor and send activities
+- /<PX_APP_ID without PX prefix>/xhr/*
+- /<PX_APP_ID without PX prefix>/init.js 
+
+First Party may also require additional changes on the sensor snippet (client side). Refer to the portal for more information.
+
+Default: On
+
+```
+<IfModule mod_perimeterx.c>
+   ...
+   FirstPartyEnabled On
+   FirstPartyXhrEnabled On
+   ...
+</IfModule>
+``` 

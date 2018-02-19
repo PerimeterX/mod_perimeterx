@@ -1168,6 +1168,8 @@ static void *create_config(apr_pool_t *p) {
         conf->monitor_mode = false;
         conf->enable_token_via_header = true;
         conf->captcha_subdomain = false;
+        conf->first_party_enabled = true;
+        conf->first_party_xhr_enabled = true;
         conf->client_base_uri = "https://client.perimeterx.net";
     }
     return conf;
