@@ -383,7 +383,7 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 
     if (status == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code != HTTP_OK) {
+        if (status_code == HTTP_OK) {
             if (response_data != NULL) {
                 *response_headers = response.headers;
                 *content_size = response.size;
