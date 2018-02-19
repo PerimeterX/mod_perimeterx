@@ -206,8 +206,9 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
     }
 }
 
-static void redirect_copy_headers_out(request_rec *r, apr_array_header_t *response_headers) {
-    if (response_headers && response_headers->nelts > 1) {
+static void redirect_copy_headers_out(request_rec *r, const redirect_response *res) {
+    apr_array_header_t *response_headers = res->response_headers;
+    if (response_headers && response_headers->nelts > 0) {
         apr_table_clear(r->headers_out);
         for (int i = 0; i < response_headers->nelts; i++) {
             char *header = APR_ARRAY_IDX(response_headers, i, char*);
@@ -215,6 +216,8 @@ static void redirect_copy_headers_out(request_rec *r, apr_array_header_t *respon
             char *key = apr_strtok (header, HEADER_DELIMETER, &value);
             apr_table_set(r->headers_out, key, value);
         }
+    } else if (res->predefined && res->response_content_type) {
+        apr_table_set(r->headers_out, "Content-Type", res->response_content_type);
     }
 }
 
@@ -235,7 +238,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
     if (strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
         redirect_res = redirect_client(r, conf);
         r->status = HTTP_OK;
-        redirect_copy_headers_out(r, redirect_res->response_headers);
+        redirect_copy_headers_out(r, redirect_res);
         ap_rwrite(redirect_res->content, redirect_res->content_size, r);
         return DONE;
     }
@@ -244,7 +247,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
     if (strncmp(conf->xhr_path_prefix, r->parsed_uri.path, strlen(conf->xhr_path_prefix)) == 0) {
         redirect_res = redirect_xhr(r, conf);
         r->status = HTTP_OK;
-        redirect_copy_headers_out(r, redirect_res->response_headers);
+        redirect_copy_headers_out(r, redirect_res);
         ap_rwrite(redirect_res->content, redirect_res->content_size, r);
         return DONE;
     }

@@ -34,6 +34,7 @@ typedef struct px_props_t {
     const char *hostUrl;
     const char *jsClientSrc;
     const char *firstPartyEnabled;
+    const char *captchaType;
 } px_props;
 
 static const char *get_px_props_value(const px_props *props, const char *key) {
@@ -67,10 +68,13 @@ static const char *get_px_props_value(const px_props *props, const char *key) {
     if (!strcmp(key, "jsClientSrc")) {
         return props->jsClientSrc;
     }
-
     if (!strcmp(key, "firstPartyEnabled")) {
         return props->firstPartyEnabled;
     }
+    if (!strcmp(key, "captchaType")) {
+        return props->captchaType;
+    }
+
     return NULL;
 }
 
@@ -149,6 +153,7 @@ int render_template(const char *tpl, char **html, const request_context *ctx, co
         .jsClientSrc = conf->first_party_enabled ? conf->client_path_prefix : apr_psprintf(ctx->r->pool, "//client.perimeterx.net/%s/main.min.js", conf->app_id),
         .firstPartyEnabled = conf->first_party_enabled ? "1" : NULL,
         .logoVisibility = conf->custom_logo ? visible : hidden,
+        .captchaType = conf->captcha_type == CAPTCHA_TYPE_FUNCAPTCHA ? "funCaptcha" : "reCaptcha",
         .hostUrl =  apr_psprintf(ctx->r->pool, collector_url, conf->app_id, NULL)
     };
 

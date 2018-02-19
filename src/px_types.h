@@ -228,10 +228,11 @@ typedef enum {
 } page_template_t;
 
 typedef struct redirect_response_t {
-    char *content;
+    const char *content;
+    const char *response_content_type;
     int content_size; 
-    char *response_content_type;
     apr_array_header_t *response_headers;
+    bool predefined;
 } redirect_response;
 
 #endif

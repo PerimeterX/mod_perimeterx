@@ -106,13 +106,16 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *st
    struct response_t *res = (struct response_t*)stream;
    size_t realsize = size * nitems;
 
+   // Verify that real size is bigger than 2 and last bytes are  \r \n
    if (realsize > 2 && buffer[realsize-2]  == '\r' && buffer[realsize-1] == '\n') {
         char *header = apr_pstrndup(res->r->pool, buffer, realsize-2); 
         
         char *value = NULL;
         char *key = apr_strtok (header, ":", &value);
+        // Take only headers that have a valid format key: value
         if (strlen(value) > 0 && strlen(key) > 0) {
             const char** entry = apr_array_push(res->headers);
+            // reconstruct it
             *entry = apr_psprintf(res->r->pool, "%s: %s", key, value);
         }
    }
@@ -316,7 +319,7 @@ const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
     return str;      
 }
 
-CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, char **response_data, apr_array_header_t **response_headers, int *content_size) {
+CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, const char **response_data, apr_array_header_t **response_headers, int *content_size) {
     const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
     //const char *data;
 
@@ -386,8 +389,8 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         if (status_code == HTTP_OK) {
             if (response_data != NULL) {
                 *response_headers = response.headers;
-                *content_size = response.size;
                 *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
+                *content_size = response.size;
             }
             free(response.data);
             return status;
