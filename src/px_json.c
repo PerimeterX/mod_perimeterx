@@ -151,10 +151,11 @@ char *create_risk_payload(const request_context *ctx, const px_config *conf) {
     json_t *j_headers = headers_to_json_helper(header_arr);
 
     // request object
-    json_t *j_request = json_pack("{s:s,s:s,s:s,s:O}",
+    json_t *j_request = json_pack("{s:s,s:s,s:s,s:b,s:O}",
             "ip", ctx->ip,
             "uri", ctx->uri,
             "url", ctx->full_url,
+            "firstParty", conf->first_party_enabled,
             "headers", j_headers);
     json_decref(j_headers);
 

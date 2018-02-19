@@ -16,7 +16,7 @@ static const char *CLIENT_CONTENT_TYPE = "application/javascript";
 static const char *XHR_CONTENT_TYPE = "application/json";
 static const char *GIF_CONTENT_TYPE = "image/gif";
 static const char *VID_OPT1 = "_pxvid";
-static const char *VID_OPT2 = "vid";
+static const char *VID_OPT2 = "pxvid";
 static const char *CLIENT_URI = "/%s/main.min.js";
 static const char *EMPTY_GIF = "R0lGODlhAQABAPAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 

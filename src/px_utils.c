@@ -346,8 +346,8 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 
     // append vid cookie
     if (vid) {
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: attaching vid header '%s: vid=%s'", conf->app_id, "Cookie", vid);
-        headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: vid=%s;", "Cookie", vid));
+        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: redirect_helper: attaching vid header 'Cookie: pxvid=%s'", conf->app_id, vid);
+        headers = curl_slist_append(headers, apr_psprintf(r->pool, "Cookie: pxvid=%s;", vid));
     }
 
     // Attach first party logics
