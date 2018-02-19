@@ -383,14 +383,13 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 
     if (status == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code == HTTP_OK) {
+        if (status_code != HTTP_OK) {
             if (response_data != NULL) {
                 *response_headers = response.headers;
-                *response_data = response.data;
                 *content_size = response.size;
-            } else {
-                free(response.data);
+                *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
             }
+            free(response.data);
             return status;
         }
         ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: post_request: status: %lu, url: %s", conf->app_id, status_code, url);
