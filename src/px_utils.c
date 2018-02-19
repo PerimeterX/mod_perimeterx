@@ -109,14 +109,10 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *st
    // Verify that real size is bigger than 2 and last bytes are  \r \n
    if (realsize > 2 && buffer[realsize-2]  == '\r' && buffer[realsize-1] == '\n') {
         char *header = apr_pstrndup(res->r->pool, buffer, realsize-2); 
-        
-        char *value = NULL;
-        char *key = apr_strtok (header, ":", &value);
         // Take only headers that have a valid format key: value
-        if (strlen(value) > 0 && strlen(key) > 0) {
+        if (strrchr(header, ':')) {
             const char** entry = apr_array_push(res->headers);
-            // reconstruct it
-            *entry = apr_psprintf(res->r->pool, "%s: %s", key, value);
+            *entry = header;
         }
    }
    return realsize;
