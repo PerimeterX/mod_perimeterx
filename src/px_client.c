@@ -18,7 +18,7 @@ static const char *GIF_CONTENT_TYPE = "image/gif";
 static const char *VID_OPT1 = "_pxvid";
 static const char *VID_OPT2 = "vid";
 static const char *CLIENT_URI = "/%s/main.min.js";
-static const char *EMPTY_GIF = "R0lGODlhAQABAIAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+static const char *EMPTY_GIF = "R0lGODlhAQABAPAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
 CURLcode post_request(const char *url, const char *payload, long timeout, px_config *conf, const request_context *ctx, char **response_data, double *request_rtt) {
     CURL *curl = curl_pool_get_wait(conf->curl_pool);
@@ -103,8 +103,8 @@ handle_default_xhr_response:
     }
 
     int cut_prefix_size = strlen(conf->xhr_path_prefix);
-    const char *xhr_url = apr_pstrdup(r->pool, &r->uri[cut_prefix_size]);
-    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] redirect_xhr: forwarding request from %s to %s", conf->app_id, r->parsed_uri.path, xhr_url);
+    const char *xhr_url = apr_pstrdup(r->pool, &r->unparsed_uri[cut_prefix_size]);
+    ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] redirect_xhr: forwarding request from %s to %s", conf->app_id, r->unparsed_uri, xhr_url);
 
     // Copy VID
     const char *vid = NULL;

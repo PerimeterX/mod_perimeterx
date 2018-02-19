@@ -209,7 +209,7 @@ void post_verification(request_context *ctx, px_config *conf, bool request_valid
 static void redirect_copy_headers_out(request_rec *r, apr_array_header_t *response_headers) {
     if (response_headers && response_headers->nelts > 1) {
         apr_table_clear(r->headers_out);
-        for (int i = 1; i < response_headers->nelts; i++) {
+        for (int i = 0; i < response_headers->nelts; i++) {
             char *header = APR_ARRAY_IDX(response_headers, i, char*);
             char *value = NULL;
             char *key = apr_strtok (header, HEADER_DELIMETER, &value);
@@ -245,7 +245,7 @@ int px_handle_request(request_rec *r, px_config *conf) {
         redirect_res = redirect_xhr(r, conf);
         r->status = HTTP_OK;
         redirect_copy_headers_out(r, redirect_res->response_headers);
-        ap_rwrite(redirect_res->content, strlen(redirect_res->content), r);
+        ap_rwrite(redirect_res->content, redirect_res->content_size, r);
         return DONE;
     }
 
@@ -502,8 +502,8 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
             return rv;
         }
 
-        cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size);
-        cfg->redirect_curl_pool = curl_pool_create(cfg->pool, cfg->redirect_curl_pool_size);
+        cfg->curl_pool = curl_pool_create(cfg->pool, cfg->curl_pool_size, false);
+        cfg->redirect_curl_pool = curl_pool_create(cfg->pool, cfg->redirect_curl_pool_size, true);
         if (cfg->background_activity_send) {
             ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "px_child_setup: start init for background_activity_send");
 

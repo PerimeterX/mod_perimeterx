@@ -14,9 +14,10 @@ typedef struct curl_pool_t {
     int size;
     int used;
     CURL** data;
+    bool reset;
 } curl_pool;
 
-curl_pool *curl_pool_create(apr_pool_t *p, int size);
+curl_pool *curl_pool_create(apr_pool_t *p, int size, bool reset);
 CURL *curl_pool_get(curl_pool *pool);
 CURL *curl_pool_get_wait(curl_pool *pool);
 CURL *curl_pool_get_timedwait(curl_pool *pool, apr_interval_time_t timeout);

@@ -107,8 +107,14 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *st
    size_t realsize = size * nitems;
 
    if (realsize > 2 && buffer[realsize-2]  == '\r' && buffer[realsize-1] == '\n') {
-       const char** entry = apr_array_push(res->headers);
-       *entry = apr_pstrndup(res->r->pool, buffer, realsize-2);
+        char *header = apr_pstrndup(res->r->pool, buffer, realsize-2); 
+        
+        char *value = NULL;
+        char *key = apr_strtok (header, ":", &value);
+        if (strlen(value) > 0 && strlen(key) > 0) {
+            const char** entry = apr_array_push(res->headers);
+            *entry = apr_psprintf(res->r->pool, "%s: %s", key, value);
+        }
    }
    return realsize;
 }
@@ -379,7 +385,6 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         if (status_code == HTTP_OK) {
             if (response_data != NULL) {
-                ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "body [%s]", response.data);
                 *response_headers = response.headers;
                 *response_data = response.data;
                 *content_size = response.size;

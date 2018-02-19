@@ -11,13 +11,14 @@ static apr_status_t curl_pool_destroy(void *arg) {
     return APR_SUCCESS;
 }
 
-curl_pool *curl_pool_create(apr_pool_t *p, int size) {
+curl_pool *curl_pool_create(apr_pool_t *p, int size, bool reset) {
     curl_pool *pool = (curl_pool *)apr_pcalloc(p, sizeof(curl_pool));
     apr_thread_mutex_create(&pool->mutex, APR_THREAD_MUTEX_NESTED, p);
     apr_thread_cond_create(&pool->cond, p);
     pool->size = size;
     pool->used = 0;
     pool->data = (CURL **)apr_pcalloc(p, sizeof(CURL*) * size);
+    pool->reset = reset;
     for (int i = 0; i < pool->size; ++i) {
         pool->data[i] = curl_easy_init();
     }
@@ -50,6 +51,7 @@ CURL *curl_pool_get_wait(curl_pool *pool) {
             for (int i = 0; i < pool->size && c == NULL; ++i) {
                 c = pool->data[i];
                 if  (c) {
+
                     pool->data[i] = NULL;
                     pool->used += 1;
                     found = true;
@@ -102,8 +104,10 @@ int curl_pool_put(curl_pool *pool, CURL *curl) {
         if (i < pool->size) {
             pool->data[i] = curl;
             extra = false;
-            pool->used -= 1;
-            curl_easy_reset(curl);
+            if (pool->reset) {
+                curl_easy_reset(curl);
+            }
+
             apr_thread_cond_signal(pool->cond);
         }
     }
