@@ -5,7 +5,6 @@
 #include <arpa/inet.h>
 #include <apr_strings.h>
 #include <http_log.h>
-#include "ap_config.h"
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -59,6 +58,12 @@ static void update_and_notify_health_check(px_config *conf) {
     apr_thread_mutex_unlock(conf->health_check_cond_mutex);
 }
 
+/**
+ * Use this function to read the body from request_rec
+ * Pointer to data will be set to body, free(body) will be needed
+ * After you finished working on the payload
+ * Returns -1 if failed
+ */
 static int read_body(request_rec *r, char **body) {
     *body = NULL;
     int ret = ap_setup_client_block(r, REQUEST_CHUNKED_ERROR);
@@ -102,6 +107,13 @@ static size_t write_response_cb(void* contents, size_t size, size_t nmemb, void 
     return realsize;
 }
 
+/*
+ * Callback function used for libCurl to exract response headers from curl request
+ * Sets an array of headers on response_t->headers
+ * Only headers that have 'key: value' format will be added
+ * Headers like HTTP/1.1 200 OK will be ignored
+ * Returns the real size of the header
+ */
 static size_t header_callback(char *buffer, size_t size, size_t nitems, void *stream) {
    struct response_t *res = (struct response_t*)stream;
    size_t realsize = size * nitems;
@@ -315,10 +327,16 @@ const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
     return str;      
 }
 
+/*
+ * Helper function to send http request as a proxy
+ * The headers from the original request will be copied (except for Host & sensitive headers)
+ * and the body of the request will also be copied
+ * The data will be set on response_data, content_size, response_headers
+ * Unlike post_request_helper, response_data doesn't have to be free as it being allocated using apr
+ * Returns CURLcode
+ */
 CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, const char *vid, px_config *conf, request_rec *r, const char **response_data, apr_array_header_t **response_headers, int *content_size) {
     const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
-    //const char *data;
-
     struct response_t response;
     struct curl_slist *headers = NULL;
     long status_code;
@@ -337,6 +355,7 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     if (header_arr) {
         for (int i = 0; i < header_arr->nelts; i++) {
             apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
+            // Remove sensitive headers
             if (strcasecmp(h.key, "Host") != 0) {
                 headers = curl_slist_append(headers, apr_psprintf(r->pool, "%s: %s", h.key, h.val));
             }

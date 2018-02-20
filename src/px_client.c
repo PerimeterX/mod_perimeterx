@@ -2,7 +2,6 @@
 #include <http_log.h>
 #include <apr_strings.h>
 #include <util_cookies.h>
-#include <apr_base64.h>
 
 #include "curl_pool.h"
 #include "px_utils.h"
