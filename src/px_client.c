@@ -19,16 +19,19 @@ static const char EMPTY_GIF[] = { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00
 	0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00,
 	0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b };
 static const redirect_response DEFAULT_CLIENT_RESPONSE = {
+    .predefined = true,
     .content = "",
     .content_size = 0,
     .response_content_type = "application/javascript",
 };
 static const redirect_response DEFAULT_XHR_RESPONSE = {
+    .predefined = true,
     .content = "{}",
     .content_size = 2,
     .response_content_type =  "application/json",
 };
 static const redirect_response DEFAULT_GIF_RESPONSE = {
+    .predefined = true,
     .content = EMPTY_GIF,
     .content_size = sizeof(EMPTY_GIF)/sizeof(*EMPTY_GIF),
     .response_content_type = "image/gif",
