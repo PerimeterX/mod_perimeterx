@@ -81,6 +81,7 @@ typedef struct px_config_t {
     bool first_party_xhr_enabled;
     const char *client_path_prefix;
     const char *xhr_path_prefix;
+    const char *client_exteral_path;
     const char *collector_base_uri;
     const char *client_base_uri;
 } px_config;

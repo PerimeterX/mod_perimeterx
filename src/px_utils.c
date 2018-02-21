@@ -318,7 +318,7 @@ int escape_urlencoded(char *escaped, const char *str, apr_size_t *len) {
 }
 
 const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
-    apr_size_t len;
+    apr_size_t len;       
     if (escape_urlencoded(NULL, str, &len) == 0) {
             char *encoded = apr_palloc(p, len);
             escape_urlencoded(encoded, str, NULL);

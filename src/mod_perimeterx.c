@@ -644,10 +644,10 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
-    char *reverse_prefix =  &app_id[2];
-    conf->xhr_path_prefix = apr_psprintf(cmd->pool, "/%s/xhr", conf->reverse_prefix);
-    conf->client_path_prefix = apr_psprintf(cmd->pool, "/%s/init.js", conf->reverse_prefix);
-    conf->client_exteral_path = apr_psprintf(ctx->r->pool, "//client.perimeterx.net/%s/main.min.js", app_id);
+    const char *reverse_prefix =  &app_id[2];
+    conf->xhr_path_prefix = apr_psprintf(cmd->pool, "/%s/xhr", reverse_prefix);
+    conf->client_path_prefix = apr_psprintf(cmd->pool, "/%s/init.js", reverse_prefix);
+    conf->client_exteral_path = apr_psprintf(cmd->pool, "//client.perimeterx.net/%s/main.min.js", app_id);
     conf->collector_base_uri = apr_psprintf(cmd->pool, "https://collector-%s.perimeterx.net", app_id);
     return NULL;
 }
