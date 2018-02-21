@@ -2,6 +2,7 @@ libapache-mod-perimeterx (2.9.0) jessie; urgency=medium
 
     * Added support for removing captcha cookie on subdomain wildcard, disabled by default
     * Added first party support, enabled by default - please note that additional changes may be required, refer to directives for more information
+    * Added support for funCaptcha on mobile
 
  -- nitzanpx <nitzanpx@github>  Web, 21 Feb 2018 12:20:00 +0000
 

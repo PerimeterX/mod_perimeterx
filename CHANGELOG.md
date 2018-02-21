@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## [2.9.0] - 02-21-2018
 * Added support for removing captcha cookie on subdomain wildcard, disabled by default
 * Added first party support, enabled by default - please note that additional changes may be required, refer to directives for more information
+* Added support for funCaptcha on mobile
 
 ## [2.8.0] - 01-22-2018
 * Added support for APR 1.4.6
