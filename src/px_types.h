@@ -79,7 +79,6 @@ typedef struct px_config_t {
     bool captcha_subdomain;
     bool first_party_enabled;
     bool first_party_xhr_enabled;
-    const char *reverse_prefix;
     const char *client_path_prefix;
     const char *xhr_path_prefix;
     const char *collector_base_uri;

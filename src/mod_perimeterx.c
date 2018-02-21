@@ -68,6 +68,7 @@ static const char* MAX_CURL_POOL_SIZE_EXCEEDED = "mod_perimeterx: CurlPoolSize c
 static const char *INVALID_WORKER_NUMBER_QUEUE_SIZE = "mod_perimeterx: invalid number of background activity workers - must be greater than zero";
 static const char *INVALID_ACTIVITY_QUEUE_SIZE = "mod_perimeterx: invalid background activity queue size - must be greater than zero";
 static const char *ERROR_BASE_URL_BEFORE_APP_ID = "mod_perimeterx: BaseUrl was set before AppId";
+static const char *ERROR_SHORT_APP_ID = "mod_perimeterx: AppId must be longer than 2 chars";
 
 static const char *BLOCKED_ACTIVITY_TYPE = "block";
 static const char *PAGE_REQUESTED_ACTIVITY_TYPE = "page_requested";
@@ -214,7 +215,7 @@ static void redirect_copy_headers_out(request_rec *r, const redirect_response *r
             char *header = APR_ARRAY_IDX(response_headers, i, char*);
             char *value = NULL;
             char *key = apr_strtok (header, HEADER_DELIMETER, &value);
-            apr_table_set(r->headers_out, key, value);
+            apr_table_set(r->headers_out, key, &value[1]);
         }
     } else if (res->predefined && res->response_content_type) {
         apr_table_set(r->headers_out, "Content-Type", res->response_content_type);
@@ -635,14 +636,18 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     if (conf->base_url_is_set){
         return ERROR_BASE_URL_BEFORE_APP_ID;
     }
+    if (strlen(app_id) < 3) {
+        return ERROR_SHORT_APP_ID;
+    }
     conf->app_id = app_id;
     conf->base_url = apr_psprintf(cmd->pool, DEFAULT_BASE_URL, app_id, NULL);
     conf->risk_api_url = apr_pstrcat(cmd->pool, conf->base_url, RISK_API, NULL);
     conf->captcha_api_url = apr_pstrcat(cmd->pool, conf->base_url, CAPTCHA_API, NULL);
     conf->activities_api_url = apr_pstrcat(cmd->pool, conf->base_url, ACTIVITIES_API, NULL);
-    conf->reverse_prefix = apr_pstrdup(cmd->pool, &app_id[2]); 
+    char *reverse_prefix =  &app_id[2];
     conf->xhr_path_prefix = apr_psprintf(cmd->pool, "/%s/xhr", conf->reverse_prefix);
     conf->client_path_prefix = apr_psprintf(cmd->pool, "/%s/init.js", conf->reverse_prefix);
+    conf->client_exteral_path = apr_psprintf(ctx->r->pool, "//client.perimeterx.net/%s/main.min.js", app_id);
     conf->collector_base_uri = apr_psprintf(cmd->pool, "https://collector-%s.perimeterx.net", app_id);
     return NULL;
 }

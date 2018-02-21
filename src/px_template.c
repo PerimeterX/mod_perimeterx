@@ -150,7 +150,7 @@ int render_template(const char *tpl, char **html, const request_context *ctx, co
         .customLogo = conf->custom_logo,
         .cssRef = conf->css_ref,
         .jsRef = conf->js_ref,
-        .jsClientSrc = conf->first_party_enabled ? conf->client_path_prefix : apr_psprintf(ctx->r->pool, "//client.perimeterx.net/%s/main.min.js", conf->app_id),
+        .jsClientSrc = conf->first_party_enabled ? conf->client_path_prefix : conf->client_exteral_path,
         .firstPartyEnabled = conf->first_party_enabled ? "1" : NULL,
         .logoVisibility = conf->custom_logo ? visible : hidden,
         .captchaType = conf->captcha_type == CAPTCHA_TYPE_FUNCAPTCHA ? "funCaptcha" : "reCaptcha",

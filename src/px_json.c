@@ -62,7 +62,6 @@ static const char *CAPTCHA_TYPE_STR[] = {
 };
 
 // format json requests
-//
 char *create_activity(const char *activity_type, const px_config *conf, const request_context *ctx) {
     json_t *j_details = json_pack("{s:i,s:s,s:s,s:s,s:s}",
             "block_score", ctx->score,

@@ -104,6 +104,7 @@ int curl_pool_put(curl_pool *pool, CURL *curl) {
         if (i < pool->size) {
             pool->data[i] = curl;
             extra = false;
+            pool->used -= 1;
             if (pool->reset) {
                 curl_easy_reset(curl);
             }

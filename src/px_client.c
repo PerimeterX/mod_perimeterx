@@ -90,13 +90,13 @@ const redirect_response *redirect_xhr(request_rec *r, px_config *conf) {
     if (file_ending && strcmp(file_ending, ".gif") == 0) {
         default_res = &DEFAULT_GIF_RESPONSE; 
     }
-    // Handle xhr/client featrue turned off
+    // Handle xhr/client feature turned off
     if (!conf->first_party_enabled || !conf->first_party_enabled ) {
         return default_res;
     }
 
     int cut_prefix_size = strlen(conf->xhr_path_prefix);
-    const char *xhr_url = apr_pstrdup(r->pool, &r->unparsed_uri[cut_prefix_size]);
+    const char *xhr_url = &r->unparsed_uri[cut_prefix_size]; 
     ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s] redirect_xhr: forwarding request from %s to %s", conf->app_id, r->unparsed_uri, xhr_url);
 
     // Copy VID

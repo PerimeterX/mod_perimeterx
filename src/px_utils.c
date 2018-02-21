@@ -318,7 +318,7 @@ int escape_urlencoded(char *escaped, const char *str, apr_size_t *len) {
 }
 
 const char *pescape_urlencoded(apr_pool_t *p, const char *str) {
-    apr_size_t len;       
+    apr_size_t len;
     if (escape_urlencoded(NULL, str, &len) == 0) {
             char *encoded = apr_palloc(p, len);
             escape_urlencoded(encoded, str, NULL);
@@ -407,11 +407,10 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
                 *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
                 *content_size = response.size;
             }
-            free(response.data);
-            return status;
+        } else {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: post_request: status: %lu, url: %s", conf->app_id, status_code, url);
+            status = CURLE_HTTP_RETURNED_ERROR;
         }
-        ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, r->server, "[%s]: post_request: status: %lu, url: %s", conf->app_id, status_code, url);
-        status = CURLE_HTTP_RETURNED_ERROR;
     } else {
         update_and_notify_health_check(conf);
         size_t len = strlen(errbuf);
