@@ -61,6 +61,10 @@ static const char *CAPTCHA_TYPE_STR[] = {
     [CAPTCHA_TYPE_FUNCAPTCHA] = "funCaptcha",
 };
 
+const char *captcha_type_str(captcha_type_t captcha_type) {
+    return CAPTCHA_TYPE_STR[captcha_type];
+}
+
 // format json requests
 char *create_activity(const char *activity_type, const px_config *conf, const request_context *ctx) {
     json_t *j_details = json_pack("{s:i,s:s,s:s,s:s,s:s}",

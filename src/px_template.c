@@ -4,6 +4,7 @@
 
 #include "px_types.h"
 #include "mustach.h"
+#include "px_json.h"
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -153,7 +154,7 @@ int render_template(const char *tpl, char **html, const request_context *ctx, co
         .jsClientSrc = conf->first_party_enabled ? conf->client_path_prefix : conf->client_exteral_path,
         .firstPartyEnabled = conf->first_party_enabled ? "1" : NULL,
         .logoVisibility = conf->custom_logo ? visible : hidden,
-        .captchaType = conf->captcha_type == CAPTCHA_TYPE_FUNCAPTCHA ? "funCaptcha" : "reCaptcha",
+        .captchaType = captcha_type_str(conf->captcha_type),
         .hostUrl =  apr_psprintf(ctx->r->pool, collector_url, conf->app_id, NULL)
     };
 
