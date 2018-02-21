@@ -1,3 +1,10 @@
+libapache-mod-perimeterx (2.9.0) jessie; urgency=medium
+
+    * Added support for removing captcha cookie on subdomain wildcard, disabled by default
+    * Added first party support, enabled by default - please note that additional changes may be required, refer to directives for more information
+
+ -- nitzanpx <nitzanpx@github>  Web, 21 Feb 2018 12:20:00 +0000
+
 libapache-mod-perimeterx (2.8.0) jessie; urgency=high
 
     * Added support for APR 1.4.6
