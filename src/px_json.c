@@ -376,7 +376,7 @@ const char* context_to_json_string(request_context *ctx) {
     if (header_arr) {
         for (int i = 0; i < header_arr->nelts; i++) {
             apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
-            json_object_set(headers, h.key, json_string(h.val));
+            json_object_set_new(headers, h.key, json_string(h.val));
         }
     }
 
