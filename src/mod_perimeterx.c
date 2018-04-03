@@ -223,8 +223,8 @@ static void redirect_copy_headers_out(request_rec *r, const redirect_response *r
 }
 
 int px_handle_request(request_rec *r, px_config *conf) {
-    // Decline if module is disabled
-    if (!conf->module_enabled) {
+    // Decline if module is disabled or not properly configured
+    if (!conf || !conf->module_enabled || !conf->app_id) {
         return DECLINED;
     }
 
@@ -503,8 +503,8 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
     for (server_rec *vs = s; vs; vs = vs->next) {
 
         px_config *cfg = ap_get_module_config(vs->module_config, &perimeterx_module);
-        if (!cfg || !cfg->module_enabled) {
-            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "Request will not be verified, module is disabled");
+        if (!cfg || !cfg->module_enabled || !cfg->app_id) {
+            ap_log_error(APLOG_MARK, APLOG_DEBUG | APLOG_NOERRNO, 0, s, LOGGER_DEBUG_FORMAT, cfg->app_id, "Request will not be verified, module is disabled or not properly configured");
             continue;
         }
         // initialize the PerimeterX needed pools and background workers if the PerimeterX module is enabled
@@ -642,7 +642,7 @@ static const char *set_app_id(cmd_parms *cmd, void *config, const char *app_id) 
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
-    if (conf->base_url_is_set){
+    if (conf->base_url_is_set) {
         return ERROR_BASE_URL_BEFORE_APP_ID;
     }
     if (strlen(app_id) < 3) {
@@ -1155,8 +1155,10 @@ static void *create_config(apr_pool_t *p) {
         conf->risk_api_url = apr_pstrcat(p, conf->base_url, RISK_API, NULL);
         conf->captcha_api_url = apr_pstrcat(p, conf->base_url, CAPTCHA_API, NULL);
         conf->activities_api_url = apr_pstrcat(p, conf->base_url, ACTIVITIES_API, NULL);
-        conf->auth_token = "";
-        conf->auth_header = "";
+        conf->app_id = NULL;
+        conf->payload_key = NULL;
+        conf->auth_token = NULL;
+        conf->auth_header = NULL;
         conf->routes_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->useragents_whitelist = apr_array_make(p, 0, sizeof(char*));
         conf->custom_file_ext_whitelist = apr_array_make(p, 0, sizeof(char*));
