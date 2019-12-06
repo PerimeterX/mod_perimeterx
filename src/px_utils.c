@@ -178,10 +178,23 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
     return socket_ip;
 }
 
+// return true if response could contain a body
+static bool should_receive_body(long status_code) {
+    if (status_code >= HTTP_CONTINUE && status_code < HTTP_OK) {
+        return false;
+    }
+
+    // No Content
+    if (status_code == HTTP_NO_CONTENT) {
+        return false;
+    }
+
+    return true;
+}
+
 CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, long connect_timeout, long timeout, px_config *conf, server_rec *server, char **response_data) {
     struct response_t response;
     struct curl_slist *headers = NULL;
-    long status_code;
     char errbuf[CURL_ERROR_SIZE];
     errbuf[0] = 0;
 
@@ -207,8 +220,10 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
     CURLcode status = curl_easy_perform(curl);
     curl_slist_free_all(headers);
     if (status == CURLE_OK) {
+        long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code == HTTP_OK) {
+        px_log_debug_fmt("status: %lu, body: %d, url: %s", status_code, response.size, url);
+        if (should_receive_body(status_code) && response.size) {
             if (response_data != NULL) {
                 *response_data = response.data;
             } else {
@@ -216,7 +231,6 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
             }
             return status;
         }
-        px_log_debug_fmt("status: %lu, url: %s", status_code, url);
         status = CURLE_HTTP_RETURNED_ERROR;
     } else {
         update_and_notify_health_check(conf);
@@ -355,7 +369,6 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
     struct response_t response;
     struct curl_slist *headers = NULL;
-    long status_code;
     char errbuf[CURL_ERROR_SIZE];
     errbuf[0] = 0;
 
@@ -437,9 +450,10 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     curl_slist_free_all(headers);
 
     if (status == CURLE_OK) {
+        long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        px_log_debug_fmt("status: %lu, url: %s", status_code, url);
-        if (status_code == HTTP_OK) {
+        px_log_debug_fmt("status: %lu, body: %d, url: %s", status_code, response.size, url);
+        if (should_receive_body(status_code) && response.size) {
             if (response_data != NULL) {
                 *response_headers = response.headers;
                 *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
