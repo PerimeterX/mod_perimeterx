@@ -226,12 +226,17 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
         if (should_receive_body(status_code) && response.size) {
             if (response_data != NULL) {
                 *response_data = response.data;
-            } else {
-                free(response.data);
+                // the caller frees the data
+                return status;
             }
-            return status;
+
+        // we support 204 (no content) and 304 (not modified)
+        } else if (status_code == 204 || status_code == 304) {
+
+        // unsupported HTTP code
+        } else {
+            status = CURLE_HTTP_RETURNED_ERROR;
         }
-        status = CURLE_HTTP_RETURNED_ERROR;
     } else {
         update_and_notify_health_check(conf);
         size_t len = strlen(errbuf);
@@ -453,12 +458,22 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
         long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
         px_log_debug_fmt("status: %lu, body: %d, url: %s", status_code, response.size, url);
+
+        *content_size = 0;
+
+        // check for HTTP codes with body
         if (should_receive_body(status_code) && response.size) {
+            *response_headers = response.headers;
             if (response_data != NULL) {
-                *response_headers = response.headers;
                 *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
                 *content_size = response.size;
             }
+
+        // we support 204 (no content) and 304 (not modified)
+        } else if (status_code == 204 || status_code == 304) {
+            *response_headers = response.headers;
+
+        // unsupported HTTP code
         } else {
             status = CURLE_HTTP_RETURNED_ERROR;
         }

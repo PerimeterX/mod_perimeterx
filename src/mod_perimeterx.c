@@ -247,7 +247,9 @@ static int px_handle_request(request_rec *r, px_config *conf) {
         redirect_res = redirect_client(r, conf);
         r->status = redirect_res->http_code;
         redirect_copy_headers_out(r, redirect_res);
-        ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        if (redirect_res->content_size) {
+            ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        }
         return DONE;
     }
 
@@ -256,7 +258,9 @@ static int px_handle_request(request_rec *r, px_config *conf) {
         redirect_res = redirect_xhr(r, conf);
         r->status = redirect_res->http_code;
         redirect_copy_headers_out(r, redirect_res);
-        ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        if (redirect_res->content_size) {
+            ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        }
         return DONE;
     }
 
@@ -1561,7 +1565,7 @@ static void *create_config(apr_pool_t *p, server_rec *s) {
         conf->origin_envvar_name  = NULL;
         conf->origin_wildcard_enabled = false;
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
-        conf->monitor_mode = true; 
+        conf->monitor_mode = true;
         conf->enable_token_via_header = true;
         conf->captcha_subdomain = false;
         conf->first_party_enabled = true;
