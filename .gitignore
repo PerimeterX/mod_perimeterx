@@ -64,3 +64,4 @@ contrib/version.sh
 core
 valgrind.out
 compile_commands.json
+.DS_Store

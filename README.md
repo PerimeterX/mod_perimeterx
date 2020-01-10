@@ -9,7 +9,7 @@
 [PerimeterX](http://www.perimeterx.com) Apache Module
 ===========================================
 
-> Latest stable version: [v3.1.0](https://github.com/PerimeterX/mod_perimeterx/releases/tag/v3.1.0)
+> Latest stable version: [v3.1.1](https://github.com/PerimeterX/mod_perimeterx/releases/tag/v3.1.1)
 
 
 Table of Contents
