@@ -50,7 +50,7 @@ static const char *CONTENT_TYPE_JSON = "application/json";
 static const char *CONTENT_TYPE_HTML = "text/html";
 
 // constants
-static const char *PERIMETERX_MODULE_VERSION = "Apache Module v3.1.0";
+static const char *PERIMETERX_MODULE_VERSION = "Apache Module v3.1.1";
 static const char *SCORE_HEADER_NAME = "X-PX-SCORE";
 static const char *VID_HEADER_NAME = "X-PX-VID";
 static const char *UUID_HEADER_NAME = "X-PX-UUID";
