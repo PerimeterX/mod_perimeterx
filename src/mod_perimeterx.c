@@ -308,7 +308,8 @@ static int px_handle_request(request_rec *r, px_config *conf) {
 
         if (!request_valid && ctx->block_enabled) {
             // redirecting requests to custom block page if exists
-            if (conf->block_page_url) {
+            // do not send block_page for mobile requests
+            if (conf->block_page_url && ctx->token_origin != TOKEN_ORIGIN_HEADER) {
                 const char *url_arg = r->args ? apr_pstrcat(r->pool, r->uri, "?", r->args, NULL) : r->uri;
                 const char *url = pescape_urlencoded(r->pool, url_arg);
                 const char *redirect_url = apr_pstrcat(r->pool, conf->block_page_url, "?url=", url, "&uuid=", ctx->uuid, "&vid=", ctx->vid,  NULL);
@@ -1561,7 +1562,7 @@ static void *create_config(apr_pool_t *p, server_rec *s) {
         conf->origin_envvar_name  = NULL;
         conf->origin_wildcard_enabled = false;
         conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
-        conf->monitor_mode = true; 
+        conf->monitor_mode = true;
         conf->enable_token_via_header = true;
         conf->captcha_subdomain = false;
         conf->first_party_enabled = true;
