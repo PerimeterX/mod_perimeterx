@@ -100,6 +100,14 @@ char *create_activity(const char *activity_type, const request_context *ctx) {
         json_object_set_new(j_details, "pass_reason", json_string(pass_reason_str));
     }
 
+    // Add values from custom_parameters headers
+    json_t *j_custom_parameters;
+    if (conf->custom_parameters->nelts) {
+        j_custom_parameters = json_object();
+    } else {
+        j_custom_parameters = NULL;
+    }
+
     // Extract all headers and jsonfy it
     json_t *j_headers = json_object();
     if (!j_headers) {
@@ -108,8 +116,21 @@ char *create_activity(const char *activity_type, const request_context *ctx) {
     }
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
     for (int i = 0; i < header_arr->nelts; i++) {
+        int j;
+
         apr_table_entry_t h = APR_ARRAY_IDX(header_arr, i, apr_table_entry_t);
         json_object_set_new(j_headers, h.key, json_string(h.val));
+
+        for (j = 0; j < conf->custom_parameters->nelts; j++) {
+            const char *s = APR_ARRAY_IDX(conf->custom_parameters, j, char*);
+            if (strcasecmp(h.key, s) == 0) {
+                char key[30];
+                snprintf(key, sizeof(key), "custom_param%d", j+1);
+                json_object_set_new(j_custom_parameters, key, json_string(h.val));
+                break;
+            }
+        }
+
     }
 
     json_t *activity = json_pack("{s:s, s:s, s:s, s:s, s:o, s:o}",
@@ -122,28 +143,48 @@ char *create_activity(const char *activity_type, const request_context *ctx) {
     if (activity == NULL) {
         json_decref(j_details);
         json_decref(j_headers);
+        json_decref(j_custom_parameters);
         return NULL;
     }
 
     if (ctx->vid) {
         json_object_set_new(activity, "vid", json_string(ctx->vid));
     }
+    if (j_custom_parameters && json_object_size(j_custom_parameters)) {
+        json_object_update(activity, j_custom_parameters);
+    }
 
     char *request_str = json_dumps(activity, JSON_COMPACT);
     json_decref(activity);
+    json_decref(j_custom_parameters);
+
     return request_str;
 }
 
-static json_t *headers_to_json_helper(const apr_array_header_t *arr) {
+static json_t *headers_to_json_helper(const px_config *conf, const apr_array_header_t *arr, json_t *j_custom_parameters) {
     json_t *j_headers = json_array();
     // Extract all headers and jsonfy it
     if (arr) {
         for (int i = 0; i < arr->nelts; i++) {
+            int j;
+
             apr_table_entry_t h = APR_ARRAY_IDX(arr, i, apr_table_entry_t);
             json_t *j_header = json_object();
             json_object_set_new(j_header, "name", json_string(h.key));
             json_object_set_new(j_header, "value", json_string(h.val));
             json_array_append_new(j_headers, j_header);
+
+            if (j_custom_parameters) {
+                for (j = 0; j < conf->custom_parameters->nelts; j++) {
+                    const char *s = APR_ARRAY_IDX(conf->custom_parameters, j, char*);
+                    if (strcasecmp(h.key, s) == 0) {
+                        char key[30];
+                        snprintf(key, sizeof(key), "custom_param%d", j+1);
+                        json_object_set_new(j_custom_parameters, key, json_string(h.val));
+                        break;
+                    }
+                }
+            }
         }
     }
     return j_headers;
@@ -153,7 +194,15 @@ char *create_risk_payload(const request_context *ctx) {
     px_config *conf = ctx->conf;
     // headers array
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
-    json_t *j_headers = headers_to_json_helper(header_arr);
+
+    json_t *j_custom_parameters;
+    if (conf->custom_parameters->nelts) {
+       j_custom_parameters = json_object();
+    } else {
+       j_custom_parameters = NULL;
+    }
+
+    json_t *j_headers = headers_to_json_helper(conf, header_arr, j_custom_parameters);
 
     // request object
     json_t *j_request = json_pack("{s:s,s:s,s:s,s:b,s:O}",
@@ -199,8 +248,13 @@ char *create_risk_payload(const request_context *ctx) {
         json_object_set_new(j_risk, "uuid", json_string(ctx->uuid));
     }
 
+    if (j_custom_parameters && json_object_size(j_custom_parameters)) {
+        json_object_update(j_risk, j_custom_parameters);
+    }
+
     char *request_str = json_dumps(j_risk, JSON_COMPACT);
     json_decref(j_risk);
+    json_decref(j_custom_parameters);
     return request_str;
 }
 
@@ -211,7 +265,7 @@ const char *get_call_reason_string(call_reason_t call_reason) {
 char *create_captcha_payload(const request_context *ctx, const px_config *conf) {
     // headers array
     const apr_array_header_t *header_arr = apr_table_elts(ctx->headers);
-    json_t *j_headers = headers_to_json_helper(header_arr);
+    json_t *j_headers = headers_to_json_helper(conf, header_arr, NULL);
 
     // request object
     json_t *j_request = json_pack("{s:s,s:s,s:s,s:s,s:O}",

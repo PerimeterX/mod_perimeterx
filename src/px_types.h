@@ -99,6 +99,7 @@ typedef struct px_config_t {
     int px_debug;
     int log_level_err;
     int log_level_debug;
+    apr_array_header_t *custom_parameters;
 } px_config;
 
 typedef struct thread_data_t {
