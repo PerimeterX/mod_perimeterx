@@ -1526,9 +1526,20 @@ static const char* add_custom_parameters(cmd_parms *cmd, void *config, const cha
         }
     }
 
+
+    // if the state is WORD: handle the last word in the list
+    if (state == WORD) {
+        const char** entry = apr_array_push(conf->custom_parameters);
+        *entry = str_start;
+    }
+
+    // if the state is STRING: report error, there were no ending quotes
+    if (state == STRING) {
+        ap_log_perror(APLOG_MARK, APLOG_ERR, APR_SUCCESS, cmd->pool, "Error processing px_custom_parameters directive");
+    }
+
     return NULL;
 }
-
 
 
 static int px_hook_post_request(request_rec *r) {
