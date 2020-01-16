@@ -1513,7 +1513,6 @@ static const char* add_custom_parameters(cmd_parms *cmd, void *config, const cha
                     state = SPACE;
                     const char** entry = apr_array_push(conf->custom_parameters);
                     *entry = str_start;
-                    continue;
                 }
                 continue;
             case WORD:
@@ -1522,7 +1521,6 @@ static const char* add_custom_parameters(cmd_parms *cmd, void *config, const cha
                     state = SPACE;
                     const char** entry = apr_array_push(conf->custom_parameters);
                     *entry = str_start;
-                    continue;
                 }
                 continue;
         }
