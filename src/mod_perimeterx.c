@@ -1496,17 +1496,17 @@ static const char* add_custom_parameters(cmd_parms *cmd, void *config, const cha
         switch (state) {
             case SPACE:
                 if (isspace(c)) {
-                    continue;
+                    break;
                 }
                 if (c == '"') {
                     state = STRING;
                     str_start = p + 1;
-                    continue;
+                    break;
                 }
 
                 state = WORD;
                 str_start = p;
-                continue;
+                break;
             case STRING:
                 if (c == '"') {
                     *p = '\0';
@@ -1514,7 +1514,7 @@ static const char* add_custom_parameters(cmd_parms *cmd, void *config, const cha
                     const char** entry = apr_array_push(conf->custom_parameters);
                     *entry = str_start;
                 }
-                continue;
+                break;
             case WORD:
                 if (isspace(c)) {
                     *p = '\0';
@@ -1522,10 +1522,9 @@ static const char* add_custom_parameters(cmd_parms *cmd, void *config, const cha
                     const char** entry = apr_array_push(conf->custom_parameters);
                     *entry = str_start;
                 }
-                continue;
+                break;
         }
     }
-
 
     // if the state is WORD: handle the last word in the list
     if (state == WORD) {
