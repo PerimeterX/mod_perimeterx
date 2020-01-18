@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include <jansson.h>
 #include <curl/curl.h>
@@ -1478,6 +1479,67 @@ static const char *set_debug_mode(cmd_parms *cmd, void *config, int arg) {
     return NULL;
 }
 
+static const char* add_custom_parameters(cmd_parms *cmd, void *config, const char *param) {
+    px_config *conf = get_config(cmd, config);
+    if (!conf) {
+        return ERROR_CONFIG_MISSING;
+    }
+
+    // simple state machine for parsing raw list of words: word or "word" or ""
+    char *tmp_param = apr_pstrdup(cmd->pool, param);
+    enum s {SPACE, WORD, STRING} state = SPACE;
+    char *p;
+    char c;
+    char *str_start;
+    for (p = tmp_param; *p != '\0'; p++) {
+        c = *p;
+        switch (state) {
+            case SPACE:
+                if (isspace(c)) {
+                    break;
+                }
+                if (c == '"') {
+                    state = STRING;
+                    str_start = p + 1;
+                    break;
+                }
+
+                state = WORD;
+                str_start = p;
+                break;
+            case STRING:
+                if (c == '"') {
+                    *p = '\0';
+                    state = SPACE;
+                    const char** entry = apr_array_push(conf->custom_parameters);
+                    *entry = str_start;
+                }
+                break;
+            case WORD:
+                if (isspace(c)) {
+                    *p = '\0';
+                    state = SPACE;
+                    const char** entry = apr_array_push(conf->custom_parameters);
+                    *entry = str_start;
+                }
+                break;
+        }
+    }
+
+    // if the state is WORD: handle the last word in the list
+    if (state == WORD) {
+        const char** entry = apr_array_push(conf->custom_parameters);
+        *entry = str_start;
+    }
+
+    // if the state is STRING: report error, there were no ending quotes
+    if (state == STRING) {
+        ap_log_perror(APLOG_MARK, APLOG_ERR, APR_SUCCESS, cmd->pool, "Error processing px_custom_parameters directive");
+    }
+
+    return NULL;
+}
+
 
 static int px_hook_post_request(request_rec *r) {
     px_config *conf = ap_get_module_config(r->server->module_config, &perimeterx_module);
@@ -1584,6 +1646,7 @@ static void *create_config(apr_pool_t *p, server_rec *s) {
         conf->px_debug = FALSE;
         conf->log_level_err = APLOG_ERR;
         conf->log_level_debug = APLOG_DEBUG;
+        conf->custom_parameters = apr_array_make(p, 0, sizeof(char*));
     }
     return conf;
 }
@@ -1870,6 +1933,11 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Toggle debug logging mode"),
+    AP_INIT_RAW_ARGS("px_custom_parameters",
+            add_custom_parameters,
+            NULL,
+            OR_ALL,
+            "Set the list of headers for custom parameters"),
     { NULL }
 };
 
