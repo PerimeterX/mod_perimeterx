@@ -516,13 +516,16 @@ bool px_hmac_str(const char *key, const char *str, char *signature, int signatur
 
     HMAC_CTX *hmac = HMAC_CTX_new();
     if (!HMAC_Init_ex(hmac, key, strlen(key), EVP_sha256(), NULL)) {
+        HMAC_CTX_free(hmac);
         return false;
     }
     if (!HMAC_Update(hmac,(unsigned char*)str, strlen(str))) {
+        HMAC_CTX_free(hmac);
         return false;
     }
     unsigned int len = signature_len / 2;
     if (!HMAC_Final(hmac, hash, &len)) {
+        HMAC_CTX_free(hmac);
         return false;
     }
     HMAC_CTX_free(hmac);
