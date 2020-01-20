@@ -30,6 +30,7 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream);
 size_t write_response_pool_cb(void* contents, size_t size, size_t nmemb, void *stream);
 void update_and_notify_health_check(px_config *conf);
+bool px_hmac_str(const char *key, const char *str, char *signature, int signature_len);
 
 /* Logging */
 #define LOGGER_ERROR_HDR "[PerimeterX - ERROR][%s] - %s: %s"

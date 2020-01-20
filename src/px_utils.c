@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <apr_strings.h>
+#include <openssl/hmac.h>
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -12,8 +13,6 @@ APLOG_USE_MODULE(perimeterx);
 #define BLOCKSIZE 4096
 #define T_ESCAPE_URLENCODED    (16)
 #define TEST_CHAR(c, f)        (test_char_table[(unsigned)(c)] & (f))
-
-
 
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
@@ -507,4 +506,34 @@ void px_log(const px_config *conf, apr_pool_t *pool, bool log_debug, int level, 
         0, conf->server,
         log_debug ? LOGGER_DEBUG_HDR: LOGGER_ERROR_HDR,
         conf->app_id, func, text);
+}
+
+// generate HMAC SHA256 for str
+// return true if signature is set
+bool px_hmac_str(const char *key, const char *str, char *signature, int signature_len)
+{
+    unsigned char hash[32];
+
+    HMAC_CTX *hmac = HMAC_CTX_new();
+    if (!HMAC_Init_ex(hmac, key, strlen(key), EVP_sha256(), NULL)) {
+        HMAC_CTX_free(hmac);
+        return false;
+    }
+    if (!HMAC_Update(hmac,(unsigned char*)str, strlen(str))) {
+        HMAC_CTX_free(hmac);
+        return false;
+    }
+    unsigned int len = signature_len / 2;
+    if (!HMAC_Final(hmac, hash, &len)) {
+        HMAC_CTX_free(hmac);
+        return false;
+    }
+    HMAC_CTX_free(hmac);
+
+    unsigned int i;
+    for (i = 0; i < len; i++) {
+        sprintf(signature + (i * 2), "%02x", hash[i]);
+    }
+
+    return true;
 }

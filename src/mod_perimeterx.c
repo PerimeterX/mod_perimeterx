@@ -59,6 +59,7 @@ static const char *ACCEPT_HEADER_NAME = "Accept";
 static const char *ACCESS_CONTROL_ALLOW_ORIGIN_HEADER_NAME = "Access-Control-Allow-Origin";
 static const char *ORIGIN_WILDCARD_VALUE = "*";
 static const char *HEADER_DELIMETER = ":";
+static const char *TELEMETRY_HEADER = "x-px-enforcer-telemetry";
 
 static const int MAX_CURL_POOL_SIZE = 10000;
 static const int ERR_BUF_SIZE = 128;
@@ -76,6 +77,8 @@ static const char *UPDATE_REASON_REMOTE_CONFIG = "remote_config";
 static const char *UPDATE_REASON_INITIAL_CONFIG = "initial_config";
 
 static void set_app_id_helper(apr_pool_t *pool, px_config *conf, const char *app_id);
+static void telemetry_check_header(const request_rec *r, px_config *conf);
+static void telemetry_activity_send(CURL *telemetry_curl, server_rec *s, px_config *conf, const char *update_reason);
 
 #ifdef DEBUG
 extern const char *BLOCK_REASON_STR[];
@@ -242,6 +245,9 @@ static int px_handle_request(request_rec *r, px_config *conf) {
         return DECLINED;
     }
 
+    // check for x-px-enforcer-telemetry header
+    telemetry_check_header(r, conf);
+
     const redirect_response *redirect_res = NULL;
     // Redirect client
     if (conf->client_path_prefix && strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
@@ -340,6 +346,65 @@ static int px_handle_request(request_rec *r, px_config *conf) {
     }
     r->status = HTTP_OK;
     return OK;
+}
+
+
+// check for x-px-enforcer-telemetry header
+static void telemetry_check_header(const request_rec *r, px_config *conf)
+{
+    const char *telemetry_val_enc = apr_table_get(r->headers_in, TELEMETRY_HEADER);
+    if (!telemetry_val_enc) {
+        return;
+    }
+
+    // header value is base64 encoded
+    int buffsize = apr_base64_decode_len(telemetry_val_enc) + 1;
+    char *telemetry_val = apr_palloc(r->pool, buffsize);
+    int orig_len = apr_base64_decode(telemetry_val, telemetry_val_enc);
+
+    bool ok = false;
+
+    // get hmac substring
+    char *ptr = strrchr(telemetry_val, ':');
+
+    if (ptr) {
+        *ptr = '\0';
+        int ts_len = strlen(telemetry_val);
+
+        // timestamp part must present
+        if (orig_len - ts_len > 1) {
+
+            long int timestamp = strtol(telemetry_val, NULL, 10);
+
+            int HASH_LEN = 65;
+            char *hmac = ptr + 1;
+
+            char signature[HASH_LEN];
+            memset(signature, 0, HASH_LEN);
+
+            bool res = px_hmac_str(conf->payload_key, telemetry_val, signature, HASH_LEN);
+
+            // compare hmac's, ignore case
+            if (res && !strcasecmp(signature, hmac)) {
+
+                // telemetry timestamp is in ms
+                apr_time_t now = apr_time_now() * 1000;
+                if (timestamp >= now) {
+                    px_log_debug("Sending telemetry, requested by x-px-enforcer-telemetry header");
+
+                    CURL *telemetry_curl = curl_easy_init();
+                    telemetry_activity_send(telemetry_curl, r->server, conf, "requested by x-px-enforcer-telemetry header");
+                    curl_easy_cleanup(telemetry_curl);
+
+                    ok = true;
+                }
+            }
+        }
+    }
+
+    if (!ok) {
+        px_log_debug_fmt("Malformed x-px-enforcer-telemetry header: %s", telemetry_val_enc);
+    }
 }
 
 // Background thread that wakes up after reacing X timeoutes in interval length Y and checks when service is available again
@@ -803,12 +868,6 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
                 return rv;
             }
         }
-
-        // send the initial telemetry request
-        CURL *telemetry_curl = curl_easy_init();
-        telemetry_activity_send(telemetry_curl, s, conf, UPDATE_REASON_INITIAL_CONFIG);
-        px_log_debug("start init for telemetry_activity_send");
-        curl_easy_cleanup(telemetry_curl);
 
         // launch remote_config thread
         if (conf->remote_config_enabled && !conf->remote_config_thread) {
