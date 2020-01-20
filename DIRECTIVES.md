@@ -34,7 +34,6 @@ Directives
 | EnableJsonResponse | Turn on response json when accept headers are `application/json` | Off | bool | On / Off |
 | PXApplyAccessControlAllowOriginByEnvVar | Take the value of a defined environmental variable and apply it as the value of the response header Access-Control-Allow-Origin on a blocked response. If the value of the environmental variable is not a compliant URI (scheme "://" host [ ":" port ]; <scheme>, <host>, <port> from RFC 3986) then it will not be applied| NULL  | String | Only enabled when a value is provided|
 | EnableAccessControlAllowOriginWildcard | Apply **\*** as the value of the response header Access-Control-Allow-Origin. When set this directive will override **PXApplyAccessControlAllowOriginByEnvVar** if it is also defined. | Off | Bool | On / Off|
-| CaptchaType | Sets the type of which captcha provider to use | reCaptcha  | String | reCaptcha/funCaptcha |
 | EnableTokenViaHeader | Toggles on/off using mobile sdk| On | bool | On / Off |
 | BackgroundActivitySend | Toggles on/off asyncrounus activity reporting | Off | bool | On / Off |
 | BackgroundActivityWorkers | Number of background workers to send activities | 10 | Number | Integer |
@@ -48,6 +47,8 @@ Directives
 | SensitiveHeader | Set a value for a sensitive header which will be filtered and not be reported back | NULL | List |
 | EnableDebugMode | Enables debug logging mode | Off | bool | On / Off |
 | EnableRemoteConfiguration | Toggle remote configuration on/off | Off | bool | On / Off |
+| px_custom_parameters | Allows to set header names to be used as custom parameters values | NULL | List |
+
 #### <a name="ipheader">IPHeader Additional Information</a>:
 
 * The order of headers in the configuration matters. The first header found with a value will be taken as the IP address.
