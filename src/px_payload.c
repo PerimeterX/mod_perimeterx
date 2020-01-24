@@ -4,7 +4,6 @@
 #include <openssl/evp.h>
 #include <openssl/bio.h>
 #include <openssl/sha.h>
-#include <openssl/hmac.h>
 
 #include <jansson.h>
 #include <apr_base64.h>
@@ -25,25 +24,6 @@ static const int HASH_LEN = 65;
 
 static const char *SIGNING_NOFIELDS[] = { NULL };
 static const char *COOKIE_DELIMITER = ":";
-
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-static HMAC_CTX *HMAC_CTX_new(void)
-{
-   HMAC_CTX *ctx = OPENSSL_malloc(sizeof(*ctx));
-   if (ctx != NULL) {
-       HMAC_CTX_init(ctx);
-   }
-   return ctx;
-}
-
-static void HMAC_CTX_free(HMAC_CTX *ctx)
-{
-   if (ctx != NULL) {
-       HMAC_CTX_cleanup(ctx);
-       OPENSSL_free(ctx);
-   }
-}
-#endif
 
 static unsigned char *decode_base64(const char *s, int *len, apr_pool_t *p) {
     if (!s) {

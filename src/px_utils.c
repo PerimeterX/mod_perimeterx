@@ -4,7 +4,6 @@
 
 #include <arpa/inet.h>
 #include <apr_strings.h>
-#include <openssl/hmac.h>
 
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(perimeterx);
@@ -507,6 +506,26 @@ void px_log(const px_config *conf, apr_pool_t *pool, bool log_debug, int level, 
         log_debug ? LOGGER_DEBUG_HDR: LOGGER_ERROR_HDR,
         conf->app_id, func, text);
 }
+
+// older OpenSSL versions do not have these functions
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+HMAC_CTX *HMAC_CTX_new(void)
+{
+   HMAC_CTX *ctx = OPENSSL_malloc(sizeof(*ctx));
+   if (ctx != NULL) {
+       HMAC_CTX_init(ctx);
+   }
+   return ctx;
+}
+
+void HMAC_CTX_free(HMAC_CTX *ctx)
+{
+   if (ctx != NULL) {
+       HMAC_CTX_cleanup(ctx);
+       OPENSSL_free(ctx);
+   }
+}
+#endif
 
 // generate HMAC SHA256 for str
 // return true if signature is set
