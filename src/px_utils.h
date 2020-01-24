@@ -4,6 +4,7 @@
 #include <http_protocol.h>
 #include <apr_pools.h>
 #include <http_log.h>
+#include <openssl/hmac.h>
 #include "px_types.h"
 
 #if defined(__GNUC__)
@@ -30,6 +31,13 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
 size_t write_response_cb(void* contents, size_t size, size_t nmemb, void *stream);
 size_t write_response_pool_cb(void* contents, size_t size, size_t nmemb, void *stream);
 void update_and_notify_health_check(px_config *conf);
+
+
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+HMAC_CTX *HMAC_CTX_new(void);
+void HMAC_CTX_free(HMAC_CTX *ctx);
+#endif
+
 bool px_hmac_str(const char *key, const char *str, char *signature, int signature_len);
 
 /* Logging */
