@@ -35,7 +35,7 @@ For custom block implementaitons please refer to the links below:
 * [Block page with funCaptcha](examples/Custom Block Page funCAPTCHA Redirect/README.md)
 * [Block page without Captcha](examples/Custom Block Page/README.md)
 
-* [PerimeterX Javascript snippet](https://console.perimeterx.com/#/app/applicationsmgmt).
+* [PerimeterX Javascript snippet](https://console.perimeterx.com/botDefender/admin?page=applicationsmgmt).
 #### Configuration example:
  
 ```xml
