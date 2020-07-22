@@ -146,7 +146,7 @@ Basic example v3.x - Monitor Mode
 Upgrading to version 3.x will requrie additional changes if CustomBlockPage is enabled.
 From v3.x, the enforcer will not handle captcah validations, instead all captcha solving requests will be send direactly to the PerimeterX service from the Javascript handler
 
-Please refer to [Custom Block Page](BLOCK.md) implementaion for more information
+Please refer to [Custom Block Page](BLOCKPAGE.md) implementaion for more information
 
 <a name="troubleshoot"></a>Logging and Troubleshooting
 ----------------------------------------
