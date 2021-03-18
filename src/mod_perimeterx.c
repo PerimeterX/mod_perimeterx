@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include <jansson.h>
 #include <curl/curl.h>
@@ -50,7 +51,7 @@ static const char *CONTENT_TYPE_JSON = "application/json";
 static const char *CONTENT_TYPE_HTML = "text/html";
 
 // constants
-static const char *PERIMETERX_MODULE_VERSION = "Apache Module v3.0.0";
+static const char *PERIMETERX_MODULE_VERSION = "Apache Module v3.2.0";
 static const char *SCORE_HEADER_NAME = "X-PX-SCORE";
 static const char *VID_HEADER_NAME = "X-PX-VID";
 static const char *UUID_HEADER_NAME = "X-PX-UUID";
@@ -58,6 +59,7 @@ static const char *ACCEPT_HEADER_NAME = "Accept";
 static const char *ACCESS_CONTROL_ALLOW_ORIGIN_HEADER_NAME = "Access-Control-Allow-Origin";
 static const char *ORIGIN_WILDCARD_VALUE = "*";
 static const char *HEADER_DELIMETER = ":";
+static const char *TELEMETRY_HEADER = "x-px-enforcer-telemetry";
 
 static const int MAX_CURL_POOL_SIZE = 10000;
 static const int ERR_BUF_SIZE = 128;
@@ -75,6 +77,8 @@ static const char *UPDATE_REASON_REMOTE_CONFIG = "remote_config";
 static const char *UPDATE_REASON_INITIAL_CONFIG = "initial_config";
 
 static void set_app_id_helper(apr_pool_t *pool, px_config *conf, const char *app_id);
+static void telemetry_check_header(const request_rec *r, px_config *conf);
+static void telemetry_activity_send(CURL *telemetry_curl, server_rec *s, px_config *conf, const char *update_reason);
 
 #ifdef DEBUG
 extern const char *BLOCK_REASON_STR[];
@@ -239,13 +243,18 @@ static int px_handle_request(request_rec *r, px_config *conf) {
         return DECLINED;
     }
 
+    // check for x-px-enforcer-telemetry header
+    telemetry_check_header(r, conf);
+
     const redirect_response *redirect_res = NULL;
     // Redirect client
     if (conf->client_path_prefix && strncmp(conf->client_path_prefix, r->parsed_uri.path, strlen(conf->client_path_prefix)) == 0) {
         redirect_res = redirect_client(r, conf);
         r->status = redirect_res->http_code;
         redirect_copy_headers_out(r, redirect_res);
-        ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        if (redirect_res->content_size) {
+            ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        }
         return DONE;
     }
 
@@ -254,7 +263,9 @@ static int px_handle_request(request_rec *r, px_config *conf) {
         redirect_res = redirect_xhr(r, conf);
         r->status = redirect_res->http_code;
         redirect_copy_headers_out(r, redirect_res);
-        ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        if (redirect_res->content_size) {
+            ap_rwrite(redirect_res->content, redirect_res->content_size, r);
+        }
         return DONE;
     }
 
@@ -314,7 +325,8 @@ static int px_handle_request(request_rec *r, px_config *conf) {
 
         if (!request_valid && ctx->block_enabled) {
             // redirecting requests to custom block page if exists
-            if (conf->block_page_url) {
+            // do not send block_page for mobile requests
+            if (conf->block_page_url && ctx->token_origin != TOKEN_ORIGIN_HEADER) {
                 const char *url_arg = r->args ? apr_pstrcat(r->pool, r->uri, "?", r->args, NULL) : r->uri;
                 const char *url = pescape_urlencoded(r->pool, url_arg);
                 const char *redirect_url = apr_pstrcat(r->pool, conf->block_page_url, "?url=", url, "&uuid=", ctx->uuid, "&vid=", ctx->vid,  NULL);
@@ -340,6 +352,65 @@ static int px_handle_request(request_rec *r, px_config *conf) {
     }
     r->status = HTTP_OK;
     return OK;
+}
+
+
+// check for x-px-enforcer-telemetry header
+static void telemetry_check_header(const request_rec *r, px_config *conf)
+{
+    const char *telemetry_val_enc = apr_table_get(r->headers_in, TELEMETRY_HEADER);
+    if (!telemetry_val_enc) {
+        return;
+    }
+
+    // header value is base64 encoded
+    int buffsize = apr_base64_decode_len(telemetry_val_enc) + 1;
+    char *telemetry_val = apr_palloc(r->pool, buffsize);
+    int orig_len = apr_base64_decode(telemetry_val, telemetry_val_enc);
+
+    bool ok = false;
+
+    // get hmac substring
+    char *ptr = strrchr(telemetry_val, ':');
+
+    if (ptr) {
+        *ptr = '\0';
+        int ts_len = strlen(telemetry_val);
+
+        // timestamp part must present
+        if (orig_len - ts_len > 1) {
+
+            long int timestamp = strtol(telemetry_val, NULL, 10);
+
+            int HASH_LEN = 65;
+            char *hmac = ptr + 1;
+
+            char signature[HASH_LEN];
+            memset(signature, 0, HASH_LEN);
+
+            bool res = px_hmac_str(conf->payload_key, telemetry_val, signature, HASH_LEN);
+
+            // compare hmac's, ignore case
+            if (res && !strcasecmp(signature, hmac)) {
+
+                // telemetry timestamp is in ms
+                apr_time_t now = apr_time_now() * 1000;
+                if (timestamp >= now) {
+                    px_log_debug("Sending telemetry, requested by x-px-enforcer-telemetry header");
+
+                    CURL *telemetry_curl = curl_easy_init();
+                    telemetry_activity_send(telemetry_curl, r->server, conf, "requested by x-px-enforcer-telemetry header");
+                    curl_easy_cleanup(telemetry_curl);
+
+                    ok = true;
+                }
+            }
+        }
+    }
+
+    if (!ok) {
+        px_log_debug_fmt("Malformed x-px-enforcer-telemetry header: %s", telemetry_val_enc);
+    }
 }
 
 // Background thread that wakes up after reacing X timeoutes in interval length Y and checks when service is available again
@@ -803,12 +874,6 @@ static apr_status_t px_child_setup(apr_pool_t *p, server_rec *s) {
                 return rv;
             }
         }
-
-        // send the initial telemetry request
-        CURL *telemetry_curl = curl_easy_init();
-        telemetry_activity_send(telemetry_curl, s, conf, UPDATE_REASON_INITIAL_CONFIG);
-        px_log_debug("start init for telemetry_activity_send");
-        curl_easy_cleanup(telemetry_curl);
 
         // launch remote_config thread
         if (conf->remote_config_enabled && !conf->remote_config_thread) {
@@ -1439,12 +1504,67 @@ static const char *set_debug_mode(cmd_parms *cmd, void *config, int arg) {
 }
 
 static const char* set_captcha_external_path(cmd_parms *cmd, void *config, const char *captcha_external_path) {
+    conf->captcha_external_path = captcha_external_path;
+    return NULL;
+}
+
+static const char* add_custom_parameters(cmd_parms *cmd, void *config, const char *param) {
     px_config *conf = get_config(cmd, config);
     if (!conf) {
         return ERROR_CONFIG_MISSING;
     }
+    // simple state machine for parsing raw list of words: word or "word" or ""
+    char *tmp_param = apr_pstrdup(cmd->pool, param);
+    enum s {SPACE, WORD, STRING} state = SPACE;
+    char *p;
+    char c;
+    char *str_start;
+    for (p = tmp_param; *p != '\0'; p++) {
+        c = *p;
+        switch (state) {
+            case SPACE:
+                if (isspace(c)) {
+                    break;
+                }
+                if (c == '"') {
+                    state = STRING;
+                    str_start = p + 1;
+                    break;
+                }
 
-    conf->captcha_external_path = captcha_external_path;
+                state = WORD;
+                str_start = p;
+                break;
+            case STRING:
+                if (c == '"') {
+                    *p = '\0';
+                    state = SPACE;
+                    const char** entry = apr_array_push(conf->custom_parameters);
+                    *entry = str_start;
+                }
+                break;
+            case WORD:
+                if (isspace(c)) {
+                    *p = '\0';
+                    state = SPACE;
+                    const char** entry = apr_array_push(conf->custom_parameters);
+                    *entry = str_start;
+                }
+                break;
+        }
+    }
+
+    // if the state is WORD: handle the last word in the list
+    if (state == WORD) {
+        const char** entry = apr_array_push(conf->custom_parameters);
+        *entry = str_start;
+    }
+
+    // if the state is STRING: report error, there were no ending quotes
+    if (state == STRING) {
+        ap_log_perror(APLOG_MARK, APLOG_ERR, APR_SUCCESS, cmd->pool, "Error processing px_custom_parameters directive");
+    }
+
     return NULL;
 }
 
@@ -1532,6 +1652,7 @@ static void *create_config(apr_pool_t *p, server_rec *s) {
         conf->json_response_enabled = false;
         conf->origin_envvar_name  = NULL;
         conf->origin_wildcard_enabled = false;
+        conf->captcha_type = CAPTCHA_TYPE_RECAPTCHA;
         conf->monitor_mode = true;
         conf->enable_token_via_header = true;
         conf->first_party_enabled = true;
@@ -1550,6 +1671,7 @@ static void *create_config(apr_pool_t *p, server_rec *s) {
         conf->log_level_err = APLOG_ERR;
         conf->log_level_debug = APLOG_DEBUG;
         conf->captcha_external_path = apr_pstrdup(p, CAPTCHA_HOST_URL);
+        conf->custom_parameters = apr_array_make(p, 0, sizeof(char*));
     }
     return conf;
 }
@@ -1811,7 +1933,7 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Set remote configuration re-check time in milliseconds"),
-      AP_INIT_ITERATE("SensitiveHeader",
+    AP_INIT_ITERATE("SensitiveHeader",
             set_sensitive_headers,
             NULL,
             OR_ALL,
@@ -1826,7 +1948,11 @@ static const command_rec px_directives[] = {
             NULL,
             OR_ALL,
             "Set captcha script URL"),
-
+    AP_INIT_RAW_ARGS("px_custom_parameters",
+            add_custom_parameters,
+            NULL,
+            OR_ALL,
+            "Set the list of headers for custom parameters"),
     { NULL }
 };
 

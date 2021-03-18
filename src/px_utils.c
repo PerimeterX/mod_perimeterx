@@ -13,8 +13,6 @@ APLOG_USE_MODULE(perimeterx);
 #define T_ESCAPE_URLENCODED    (16)
 #define TEST_CHAR(c, f)        (test_char_table[(unsigned)(c)] & (f))
 
-
-
 static const char *JSON_CONTENT_TYPE = "Content-Type: application/json";
 static const char *EXPECT = "Expect:";
 static const char *MOBILE_SDK_HEADER = "X-PX-AUTHORIZATION";
@@ -178,10 +176,23 @@ const char *get_request_ip(const request_rec *r, const px_config *conf) {
     return socket_ip;
 }
 
+// return true if response could contain a body
+static bool should_receive_body(long status_code) {
+    if (status_code >= HTTP_CONTINUE && status_code < HTTP_OK) {
+        return false;
+    }
+
+    // No Content
+    if (status_code == HTTP_NO_CONTENT) {
+        return false;
+    }
+
+    return true;
+}
+
 CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, long connect_timeout, long timeout, px_config *conf, server_rec *server, char **response_data) {
     struct response_t response;
     struct curl_slist *headers = NULL;
-    long status_code;
     char errbuf[CURL_ERROR_SIZE];
     errbuf[0] = 0;
 
@@ -207,17 +218,23 @@ CURLcode post_request_helper(CURL* curl, const char *url, const char *payload, l
     CURLcode status = curl_easy_perform(curl);
     curl_slist_free_all(headers);
     if (status == CURLE_OK) {
+        long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (status_code == HTTP_OK) {
+        px_log_debug_fmt("status: %lu, body: %d, url: %s", status_code, response.size, url);
+        if (should_receive_body(status_code) && response.size) {
             if (response_data != NULL) {
                 *response_data = response.data;
-            } else {
-                free(response.data);
+                // the caller frees the data
+                return status;
             }
-            return status;
+
+        // we support 204 (no content) and 304 (not modified)
+        } else if (status_code == 204 || status_code == 304) {
+
+        // unsupported HTTP code
+        } else {
+            status = CURLE_HTTP_RETURNED_ERROR;
         }
-        px_log_debug_fmt("status: %lu, url: %s", status_code, url);
-        status = CURLE_HTTP_RETURNED_ERROR;
     } else {
         update_and_notify_health_check(conf);
         size_t len = strlen(errbuf);
@@ -355,7 +372,6 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     const char *url = apr_pstrcat(r->pool, base_url, uri, NULL);
     struct response_t response;
     struct curl_slist *headers = NULL;
-    long status_code;
     char errbuf[CURL_ERROR_SIZE];
     errbuf[0] = 0;
 
@@ -437,12 +453,26 @@ CURLcode redirect_helper(CURL* curl, const char *base_url, const char *uri, cons
     curl_slist_free_all(headers);
 
     if (status == CURLE_OK) {
+        long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        px_log_debug_fmt("status: %lu, url: %s", status_code, url);
-        if (response_data != NULL) {
+        px_log_debug_fmt("status: %lu, body: %d, url: %s", status_code, response.size, url);
+        *content_size = 0;
+
+        // check for HTTP codes with body
+        if (should_receive_body(status_code) && response.size) {
             *response_headers = response.headers;
-            *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
-            *content_size = response.size;
+            if (response_data != NULL) {
+                *response_data = apr_pstrmemdup(r->pool, response.data, response.size);
+                *content_size = response.size;
+            }
+
+        // we support 204 (no content) and 304 (not modified)
+        } else if (status_code == 204 || status_code == 304) {
+            *response_headers = response.headers;
+
+        // unsupported HTTP code
+        } else {
+            status = CURLE_HTTP_RETURNED_ERROR;
         }
     } else {
         update_and_notify_health_check(conf);
@@ -474,4 +504,54 @@ void px_log(const px_config *conf, apr_pool_t *pool, bool log_debug, int level, 
         0, conf->server,
         log_debug ? LOGGER_DEBUG_HDR: LOGGER_ERROR_HDR,
         conf->app_id, func, text);
+}
+
+// older OpenSSL versions do not have these functions
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+HMAC_CTX *HMAC_CTX_new(void)
+{
+   HMAC_CTX *ctx = OPENSSL_malloc(sizeof(*ctx));
+   if (ctx != NULL) {
+       HMAC_CTX_init(ctx);
+   }
+   return ctx;
+}
+
+void HMAC_CTX_free(HMAC_CTX *ctx)
+{
+   if (ctx != NULL) {
+       HMAC_CTX_cleanup(ctx);
+       OPENSSL_free(ctx);
+   }
+}
+#endif
+
+// generate HMAC SHA256 for str
+// return true if signature is set
+bool px_hmac_str(const char *key, const char *str, char *signature, int signature_len)
+{
+    unsigned char hash[32];
+
+    HMAC_CTX *hmac = HMAC_CTX_new();
+    if (!HMAC_Init_ex(hmac, key, strlen(key), EVP_sha256(), NULL)) {
+        HMAC_CTX_free(hmac);
+        return false;
+    }
+    if (!HMAC_Update(hmac,(unsigned char*)str, strlen(str))) {
+        HMAC_CTX_free(hmac);
+        return false;
+    }
+    unsigned int len = signature_len / 2;
+    if (!HMAC_Final(hmac, hash, &len)) {
+        HMAC_CTX_free(hmac);
+        return false;
+    }
+    HMAC_CTX_free(hmac);
+
+    unsigned int i;
+    for (i = 0; i < len; i++) {
+        sprintf(signature + (i * 2), "%02x", hash[i]);
+    }
+
+    return true;
 }

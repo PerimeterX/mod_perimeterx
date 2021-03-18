@@ -92,6 +92,7 @@ typedef struct px_config_t {
     int log_level_debug;
     const char *captcha_external_path;
     const char *captcha_internal_path;
+    apr_array_header_t *custom_parameters;
 } px_config;
 
 typedef struct thread_data_t {

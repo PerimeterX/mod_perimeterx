@@ -9,7 +9,7 @@
 [PerimeterX](http://www.perimeterx.com) Apache Module
 ===========================================
 
-> Latest stable version: [v2.11.0](https://github.com/PerimeterX/mod_perimeterx/releases/tag/v2.11.0)
+> Latest stable version: [v3.2.0](https://github.com/PerimeterX/mod_perimeterx/releases/tag/v3.2.0)
 
 
 Table of Contents
@@ -20,7 +20,7 @@ Table of Contents
 	- [Installation](#installation)
 	- [Basic Usage Example](#basic-usage)
 - [Upgrade](#upgrade)
-	- [Upgrade to v4.x](#upgrade-v4)
+	- [Upgrade to v3.x](#upgrade-v3)
 - [Directives](DIRECTIVES.md)
 - [Custom Block page](BLOCKPAGE.md)
 - [Logging and Troubleshooting](#troubleshoot)
@@ -94,7 +94,7 @@ Loaded Modules:
     BlockingScore 100
     ReportPageRequest On
     IPHeader X-True-IP
-    MonitorMode Off
+    MonitorMode On
 </IfModule>
 ```
 
@@ -110,19 +110,19 @@ Loaded Modules:
 		AppID [APPID PLACEHOLDER]
 		AuthToken [AUTHTOKEN PLACEHOLDER]
                 BlockingScore 100
-		MonitorMode Off
+		MonitorMode On
                 ReportPageRequest On
         </IfModule>
 </VirtualHost>
 ```
 
 ### <a name="upgrade"></a> Upgrade ###
-#### <a name="upgrade-v4"></a> Upgrade to v4.x ####
+#### <a name="upgrade-v3"></a> Upgrade to v3.x ####
 #### Default Configurations ####
-From v4.x, mod_perimeterx is shipped out in Monitor Mode turned on and BlockingScore set to 100.
+From v3.x, mod_perimeterx is shipped out in Monitor Mode turned on and BlockingScore set to 100.
 For users who wish to set the module to active blocking mode, additonal changes will be required to the module configurations.
 
-Basic example v4.x - Blocking Mode
+Basic example v3.x - Blocking Mode
 ```
         <IfModule mod_perimeterx.c>
             PXEnabled On
@@ -133,7 +133,7 @@ Basic example v4.x - Blocking Mode
         </IfModule>
 ```
 
-Basic example v4.x - Monitor Mode
+Basic example v3.x - Monitor Mode
 ```
         <IfModule mod_perimeterx.c>
             PXEnabled On
@@ -144,10 +144,10 @@ Basic example v4.x - Monitor Mode
 ```
 
 #### Custom Block Page upgrade ####
-Upgrading to version 4.x will requrie additional changes if CustomBlockPage is enabled.
-From v4.x, the enforcer will not handle captcah validations, instead all captcha solving requests will be send direactly to the PerimeterX service from the Javascript handler
+Upgrading to version 3.x will requrie additional changes if CustomBlockPage is enabled.
+From v3.x, the enforcer will not handle captcah validations, instead all captcha solving requests will be send direactly to the PerimeterX service from the Javascript handler
 
-Please refer to [Custom Block Page](BLOCK.md) implementaion for more information
+Please refer to [Custom Block Page](BLOCKPAGE.md) implementaion for more information
 
 <a name="troubleshoot"></a>Logging and Troubleshooting
 ----------------------------------------

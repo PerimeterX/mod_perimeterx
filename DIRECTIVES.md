@@ -43,10 +43,12 @@ Directives
 | FirstPartyEnabled | Toggles first party mode | On | bool | On / Off |
 | FirstPartyXhrEnabled | Toggles sending xhr requests through first party | On | bool | On / Off |
 | ClientBaseUrl | Set the base url to fetch the client from | https://client.perimeterx.net when first party is enbaled | String | A-Za-z |
-| CollectorBaseUrl | Set the base url to the collector for sending xhr requests when first party is enabled | https://<APP_ID>-collector.perimeterx.com | String | A-Za-z |
+| CollectorBaseUrl | Set the base url to the collector for sending xhr requests when first party is enabled | https://<APP_ID>-collector.perimeterx.net | String | A-Za-z |
 | SensitiveHeader | Set a value for a sensitive header which will be filtered and not be reported back | NULL | List |
 | EnableDebugMode | Enables debug logging mode | Off | bool | On / Off |
 | EnableRemoteConfiguration | Toggle remote configuration on/off | Off | bool | On / Off |
+| px_custom_parameters | Allows to set header names to be used as custom parameters values | NULL | List |
+
 #### <a name="ipheader">IPHeader Additional Information</a>:
 
 * The order of headers in the configuration matters. The first header found with a value will be taken as the IP address.

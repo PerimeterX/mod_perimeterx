@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/) 
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [3.2.0] - 01-10-2020
+### Added
+* Ability to add custom parameters to risk_api and activities.
+
+### Fixed
+* Telemetry calls are no longer sent automatically on startup.
+
+## [3.1.1] - 01-10-2020
+### Fixed
+ * Empty 304/204 responses handling.
+ * Handling mobile SDK response when `BlockPageURL` is set.
+
+## [3.1.0] - 12-11-2019
+### Fixed
+ * Handle no content on first party response
+
 ## [3.0.0] - 06-11-2018
 ### Added 
  * Remote configuration support

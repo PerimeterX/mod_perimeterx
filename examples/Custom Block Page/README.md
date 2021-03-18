@@ -1,11 +1,11 @@
-Block Page Example 
+Block Page Example
 -----------------
 > This folder contains an example of a Block Page implementation. The original PerimeterX block page has been customized, with a different color background, some icons and some colored texts.
 
 In order to use the example:
 
-1. Create a block.html file in your application (or copy the one in this folder).   
- The `<body>` section **must** include (replacing <APP_ID> with your  PX App ID):
+1. Create a block.html file in your application (or copy the one in this folder).
+ The `<body>` section **must** include (replacing <APP_ID> with your PX App ID):
 
  ```html
 <script>
@@ -13,7 +13,7 @@ In order to use the example:
     window._pxJsClientSrc = 'https://client.perimeterx.net/<APP_ID>/main.min.js';
     window._pxHostUrl = 'https://collector-<APP_ID>.perimeterx.net';
  </script>
- <script src="https://captcha.px-cdn.perimeterx.net/block.js"></script>
+ <script src="https://captcha.px-cdn.net/<APP_ID>/captcha.js?a=b&m=0"></script>
 ```
  * In the HTML structure, the `<body>` section must include the following line where the Captcha element is to be located:
 
