@@ -25,6 +25,7 @@ Table of Contents
 - [Custom Block page](BLOCKPAGE.md)
 - [Logging and Troubleshooting](#troubleshoot)
 - [Testing](#testing)
+- [Additional Information](#additional-information)
 - [Contributing](#contributing)
 	- [Tests](#tests)
 
@@ -195,6 +196,11 @@ Code coverate files will be located in the project's source directory.
 [Gcovr](http://gcovr.com/) is a tool to generate HTML files with the code coverage report.
 You can run a simple script ```contrib/run_gcovr.sh``` from the project's root directory to generate ```code-coverage.html``` file.
 
+ <a name="additional-information"></a> Additional Information
+------------------------------------------------------------
+
+### URI Delimiters
+PerimeterX processes URI paths with general- and sub-delimiters according to RFC 3986. General delimiters (e.g., `?`, `#`) are used to separate parts of the URI. Sub-delimiters (e.g., `$`, `&`) are not used to split the URI as they are considered valid characters in the URI path.
 
 <a name="contributing"></a> Contributing
 ----------------------------------------
